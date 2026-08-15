@@ -119,7 +119,10 @@ function BudgetsPage() {
             className="size-11 shrink-0 rounded-xl"
             onClick={() => {
               const n = Number(limit);
-              if (!category || !n) return toast.error("Add a category and limit");
+              if (!category || !n) {
+                toast.error("Add a category and limit");
+                return;
+              }
               addBudget({ category, limit: n });
               setLimit("");
               toast.success(`${category} budget set to ${peso(n)}`);
@@ -185,7 +188,10 @@ function BudgetsPage() {
             aria-label="Add goal"
             onClick={() => {
               const n = Number(goalTarget);
-              if (!goalTitle || !n) return toast.error("Add a goal name and target");
+              if (!goalTitle || !n) {
+                toast.error("Add a goal name and target");
+                return;
+              }
               addGoal({ title: goalTitle, target: n, current: 0 });
               setGoalTitle("");
               setGoalTarget("");
