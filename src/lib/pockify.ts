@@ -5,10 +5,10 @@ export type Transaction = {
   kind: TxKind;
   amount: number;
   category: string;
-  note?: string;
+  note?: string | undefined;
   date: string; // ISO yyyy-mm-dd
-  method?: string;
-  favorite?: boolean;
+  method?: string | undefined;
+  favorite?: boolean | undefined;
 };
 
 export type Category = {
@@ -271,7 +271,8 @@ export function weeklyBars(txs: Transaction[]) {
     .forEach((x) => {
       const day = Number(x.date.slice(8, 10));
       const idx = Math.min(3, Math.floor((day - 1) / 7));
-      weeks[idx].amount += x.amount;
+      const w = weeks[idx];
+      if (w) w.amount += x.amount;
     });
   return weeks;
 }
@@ -289,7 +290,7 @@ export function monthlyTrend(txs: Transaction[]) {
   }
   // give past months plausible values so the trend reads well in the demo
   const base = [6200, 7400, 5100, 8300, 6900];
-  return out.map((m, i) => ({ ...m, amount: m.amount || (i < 5 ? base[i] : 0) }));
+  return out.map((m, i) => ({ ...m, amount: m.amount || (i < 5 ? (base[i] ?? 0) : 0) }));
 }
 
 export function sparkline(seedNum: number) {
