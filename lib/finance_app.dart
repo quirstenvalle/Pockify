@@ -1,6 +1,24 @@
 import 'package:flutter/material.dart';
 import 'finance_models.dart';
 
+TextTheme _zeroLetterSpacing(TextTheme textTheme) => textTheme.copyWith(
+  displayLarge: textTheme.displayLarge?.copyWith(letterSpacing: 0),
+  displayMedium: textTheme.displayMedium?.copyWith(letterSpacing: 0),
+  displaySmall: textTheme.displaySmall?.copyWith(letterSpacing: 0),
+  headlineLarge: textTheme.headlineLarge?.copyWith(letterSpacing: 0),
+  headlineMedium: textTheme.headlineMedium?.copyWith(letterSpacing: 0),
+  headlineSmall: textTheme.headlineSmall?.copyWith(letterSpacing: 0),
+  titleLarge: textTheme.titleLarge?.copyWith(letterSpacing: 0),
+  titleMedium: textTheme.titleMedium?.copyWith(letterSpacing: 0),
+  titleSmall: textTheme.titleSmall?.copyWith(letterSpacing: 0),
+  bodyLarge: textTheme.bodyLarge?.copyWith(letterSpacing: 0),
+  bodyMedium: textTheme.bodyMedium?.copyWith(letterSpacing: 0),
+  bodySmall: textTheme.bodySmall?.copyWith(letterSpacing: 0),
+  labelLarge: textTheme.labelLarge?.copyWith(letterSpacing: 0),
+  labelMedium: textTheme.labelMedium?.copyWith(letterSpacing: 0),
+  labelSmall: textTheme.labelSmall?.copyWith(letterSpacing: 0),
+);
+
 class FinanceApp extends StatefulWidget {
   const FinanceApp({super.key});
 
@@ -22,6 +40,7 @@ class _FinanceAppState extends State<FinanceApp> {
         scaffoldBackgroundColor: const Color(0xFFF3F1EB),
         cardColor: const Color(0xFFFDFCFA),
         fontFamilyFallback: const ['NotoColorEmoji'],
+        textTheme: _zeroLetterSpacing(Typography.material2021().black),
         cardTheme: CardThemeData(
           color: const Color(0xFFFDFCFA),
           elevation: 0,
