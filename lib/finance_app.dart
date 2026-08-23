@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'finance_models.dart';
 
-class FinanceApp extends StatelessWidget {
+class FinanceApp extends StatefulWidget {
   const FinanceApp({super.key});
+
+  @override
+  State<FinanceApp> createState() => _FinanceAppState();
+}
+
+class _FinanceAppState extends State<FinanceApp> {
+  bool _authenticated = false;
 
   @override
   Widget build(BuildContext context) {
@@ -11,11 +18,449 @@ class FinanceApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F766E)),
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFF39A42)),
+        scaffoldBackgroundColor: const Color(0xFFF3F1EB),
+        cardColor: const Color(0xFFFDFCFA),
+        fontFamilyFallback: const ['NotoColorEmoji'],
+        cardTheme: CardThemeData(
+          color: const Color(0xFFFDFCFA),
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF0EEE9),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(999),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(999),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(999),
+            borderSide: const BorderSide(color: Color(0xFFF39A42)),
+          ),
+        ),
       ),
-      home: const FinanceHomeScreen(),
+      home: _authenticated
+          ? const FinanceHomeScreen()
+          : AuthScreen(
+              onAuthenticated: () => setState(() => _authenticated = true),
+            ),
     );
+  }
+}
+
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key, required this.onAuthenticated});
+
+  final VoidCallback onAuthenticated;
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  bool _loginMode = true;
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  final _incomeController = TextEditingController();
+  final _budgetGoalController = TextEditingController();
+  String _currency = 'Select currency';
+  String _employmentStatus = 'Select status';
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
+    _incomeController.dispose();
+    _budgetGoalController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final validEmail = _emailController.text.trim().contains('@');
+    final validPassword = _passwordController.text.trim().length >= 6;
+    final validSignup =
+        _loginMode ||
+        (_nameController.text.trim().isNotEmpty &&
+            _confirmController.text.trim() == _passwordController.text.trim());
+    if (!validEmail || !validPassword || !validSignup) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter valid account details.')),
+      );
+      return;
+    }
+    widget.onAuthenticated();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 22),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet,
+                      color: Color(0xFFFF7F20),
+                      size: 18,
+                    ),
+                    SizedBox(width: 5),
+                    Text(
+                      'Pockify',
+                      style: TextStyle(
+                        color: Color(0xFFFF7F20),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 390),
+                  child: Card(
+                    color: Colors.white,
+                    margin: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            _loginMode ? 'Welcome back' : 'Create Account',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _loginMode
+                                ? 'Sign in to securely manage your finances.'
+                                : 'Start managing your finances today.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF6D6962),
+                            ),
+                          ),
+                          const SizedBox(height: 26),
+                          if (!_loginMode) ...[
+                            const Text(
+                              'Full Name',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            TextField(
+                              controller: _nameController,
+                              decoration: _authInput(
+                                Icons.person_outline,
+                                'Mark Santos',
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          if (!_loginMode) ...[
+                            const Text(
+                              'Monthly Income',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            TextField(
+                              controller: _incomeController,
+                              keyboardType: TextInputType.number,
+                              decoration: _authInput(null, 'e.g. 5000'),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Preferred Currency',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            DropdownButtonFormField<String>(
+                              value: _currency,
+                              items:
+                                  const [
+                                        'Select currency',
+                                        'PHP (₱)',
+                                        'USD (\$)',
+                                        'EUR (€)',
+                                      ]
+                                      .map(
+                                        (item) => DropdownMenuItem(
+                                          value: item,
+                                          child: Text(item),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (value) => setState(
+                                () => _currency = value ?? _currency,
+                              ),
+                              decoration: _authInput(null, 'Select currency'),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Birth Date',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            TextField(
+                              decoration: _authInput(null, 'mm/dd/yyyy')
+                                  .copyWith(
+                                    suffixIcon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 15,
+                                    ),
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Monthly Budget Goal',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            TextField(
+                              controller: _budgetGoalController,
+                              keyboardType: TextInputType.number,
+                              decoration: _authInput(null, '\$ 0.00'),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Employment Status',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            DropdownButtonFormField<String>(
+                              value: _employmentStatus,
+                              items:
+                                  const [
+                                        'Select status',
+                                        'Employed',
+                                        'Self-employed',
+                                        'Student',
+                                        'Unemployed',
+                                      ]
+                                      .map(
+                                        (item) => DropdownMenuItem(
+                                          value: item,
+                                          child: Text(item),
+                                        ),
+                                      )
+                                      .toList(),
+                              onChanged: (value) => setState(
+                                () => _employmentStatus =
+                                    value ?? _employmentStatus,
+                              ),
+                              decoration: _authInput(null, 'Select status'),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          const Text(
+                            'Email Address',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          TextField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _authInput(
+                              Icons.mail_outline,
+                              'name@example.com',
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Password',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            decoration: _authInput(
+                              Icons.lock_outline,
+                              '••••••••',
+                            ),
+                          ),
+                          if (!_loginMode) ...[
+                            const SizedBox(height: 14),
+                            TextField(
+                              controller: _confirmController,
+                              obscureText: true,
+                              decoration: _authInput(
+                                Icons.lock_outline,
+                                'Confirm password',
+                              ),
+                            ),
+                          ],
+                          if (_loginMode)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () => _showMessage(
+                                  'Password reset is not connected yet.',
+                                ),
+                                child: const Text(
+                                  'Forgot Password?',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFFFF7F20),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                            onPressed: _submit,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF7F20),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            child: Text(_loginMode ? 'Sign In' : 'Sign Up'),
+                          ),
+                          const SizedBox(height: 22),
+                          Row(
+                            children: [
+                              const Expanded(child: Divider()),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                child: Text(
+                                  _loginMode
+                                      ? 'or continue with'
+                                      : 'or sign up with',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                              const Expanded(child: Divider()),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () => _showMessage(
+                              'Google sign-in is not connected yet.',
+                            ),
+                            icon: const Icon(Icons.login, size: 16),
+                            label: const Text(
+                              'Continue with Google',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: () => _showMessage(
+                              'Apple sign-in is not connected yet.',
+                            ),
+                            icon: const Icon(Icons.phone_iphone, size: 16),
+                            label: const Text(
+                              'Continue with Apple',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          TextButton(
+                            onPressed: () =>
+                                setState(() => _loginMode = !_loginMode),
+                            child: Text(
+                              _loginMode
+                                  ? "Don't have an account? Sign Up"
+                                  : 'Already have an account? Sign In',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFFFF7F20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _authInput(IconData? icon, String hint) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon, size: 17),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: Color(0xFFD8D3CB)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: Color(0xFFD8D3CB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: Color(0xFFFF7F20)),
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -31,16 +476,28 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   String _transactionQuery = '';
   String _transactionFilter = 'This Month';
   String _budgetCategory = 'Food';
-  final TextEditingController _budgetCategoryController =
-      TextEditingController(text: 'Food');
+  final TextEditingController _budgetCategoryController = TextEditingController(
+    text: 'Food',
+  );
   final TextEditingController _budgetLimitController = TextEditingController();
+  final TextEditingController _goalTitleController = TextEditingController();
+  final TextEditingController _goalTargetController = TextEditingController();
   final List<TransactionModel> _transactions = [...SEED_TRANSACTIONS];
   final List<BudgetModel> _budgets = [...SEED_BUDGETS];
+  final List<GoalModel> _goals = [...SEED_GOALS];
+  final Map<String, bool> _settings = {
+    'Daily expense reminder': true,
+    'Budget threshold alerts': true,
+    'Streak celebrations': true,
+    'Biometric lock': false,
+  };
 
   @override
   void dispose() {
     _budgetCategoryController.dispose();
     _budgetLimitController.dispose();
+    _goalTitleController.dispose();
+    _goalTargetController.dispose();
     super.dispose();
   }
 
@@ -94,6 +551,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     });
   }
 
+  Future<void> _confirmRemoveTransaction(String id) async {
+    final confirmed = await _confirmAction('Delete transaction?');
+    if (confirmed) _removeTransaction(id);
+  }
+
   void _addBudget() {
     final limit = double.tryParse(_budgetLimitController.text.trim());
     if (_budgetCategory.trim().isEmpty || limit == null || limit <= 0) {
@@ -120,6 +582,68 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     });
   }
 
+  Future<void> _confirmRemoveBudget(String id) async {
+    final confirmed = await _confirmAction('Delete budget?');
+    if (confirmed) _removeBudget(id);
+  }
+
+  Future<bool> _confirmAction(String title) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: const Text('This action cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _addGoal() {
+    final title = _goalTitleController.text.trim();
+    final target = double.tryParse(_goalTargetController.text.trim());
+    if (title.isEmpty || target == null || target <= 0) {
+      _showMessage('Add a goal name and a valid target.');
+      return;
+    }
+    setState(() {
+      _goals.add(
+        GoalModel(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title,
+          target: target,
+          current: 0,
+        ),
+      );
+      _goalTitleController.clear();
+      _goalTargetController.clear();
+    });
+    _showMessage('$title goal added.');
+  }
+
+  void _contributeGoal(String id) {
+    setState(() {
+      final index = _goals.indexWhere((goal) => goal.id == id);
+      if (index == -1) return;
+      final goal = _goals[index];
+      _goals[index] = GoalModel(
+        id: goal.id,
+        title: goal.title,
+        target: goal.target,
+        current: (goal.current + 500).clamp(0, goal.target),
+      );
+    });
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -127,134 +651,254 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   void _showAddTransactionSheet() {
-    final amountController = TextEditingController();
+    return _showQuickAddDialog();
+  }
+
+  Widget _quickTypeButton(String label, bool selected, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF151311) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: selected ? Colors.white : const Color(0xFF6D6962),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showQuickAddDialog() {
+    final amountController = TextEditingController(text: '0.00');
     final noteController = TextEditingController();
+    final dateController = TextEditingController(text: '08/23/2026');
     TxKind kind = TxKind.expense;
     String category = 'Food';
     final categories = CATEGORIES.map((c) => c.name).toList();
 
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Add transaction',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Amount',
-                      prefixText: '₱ ',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<TxKind>(
-                    value: kind,
-                    items: const [
-                      DropdownMenuItem(
-                        value: TxKind.expense,
-                        child: Text('Expense'),
-                      ),
-                      DropdownMenuItem(
-                        value: TxKind.income,
-                        child: Text('Income'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setSheetState(() => kind = value);
-                      }
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Type',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: category,
-                    items: categories
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value),
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          backgroundColor: const Color(0xFFFDFCFA),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 520,
+              maxHeight: MediaQuery.of(context).size.height * 0.88,
+            ),
+            child: SingleChildScrollView(
+              child: StatefulBuilder(
+                builder: (context, setSheetState) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Quick add',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
                           ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setSheetState(() => category = value);
-                      }
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteController,
-                    decoration: const InputDecoration(
-                      labelText: 'Note',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        final parsed = double.tryParse(
-                          amountController.text.trim(),
-                        );
-                        if (parsed == null || parsed <= 0) return;
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Log it in a few taps — no backend needed yet.',
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0EEE9),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _quickTypeButton(
+                                  'Expense',
+                                  kind == TxKind.expense,
+                                  () => setSheetState(
+                                    () => kind = TxKind.expense,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: _quickTypeButton(
+                                  'Income',
+                                  kind == TxKind.income,
+                                  () =>
+                                      setSheetState(() => kind = TxKind.income),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: '₱ ',
+                            filled: true,
+                            fillColor: const Color(0xFFF0EEE9),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(999),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            ActionChip(
+                              avatar: const Icon(
+                                Icons.star,
+                                size: 14,
+                                color: Colors.amber,
+                              ),
+                              label: const Text('Bus fare · ₱80'),
+                              onPressed: () {
+                                amountController.text = '80';
+                                noteController.text = 'Bus fare';
+                              },
+                            ),
+                            ActionChip(
+                              avatar: const Icon(
+                                Icons.star,
+                                size: 14,
+                                color: Colors.amber,
+                              ),
+                              label: const Text('Rice bowl · ₱120'),
+                              onPressed: () {
+                                amountController.text = '120';
+                                noteController.text = 'Rice bowl';
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: categories
+                              .map(
+                                (item) => ChoiceChip(
+                                  label: Text(item),
+                                  selected: category == item,
+                                  selectedColor: const Color(0xFFFF7F20),
+                                  labelStyle: TextStyle(
+                                    color: category == item
+                                        ? Colors.white
+                                        : Colors.grey.shade700,
+                                  ),
+                                  onSelected: (_) =>
+                                      setSheetState(() => category = item),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: dateController,
+                                readOnly: true,
+                                onTap: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    firstDate: DateTime(2020),
+                                    lastDate: DateTime(2100),
+                                    initialDate: DateTime.now(),
+                                  );
+                                  if (picked != null) {
+                                    dateController.text =
+                                        '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
+                                  }
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Date',
+                                  suffixIcon: Icon(
+                                    Icons.calendar_today_outlined,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: noteController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Note',
+                                  hintText: 'Optional',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              final parsed = double.tryParse(
+                                amountController.text.trim(),
+                              );
+                              if (parsed == null || parsed <= 0) return;
+                              final dateParts = dateController.text.split('/');
+                              final transactionDate = dateParts.length == 3
+                                  ? '${dateParts[2]}-${dateParts[0].padLeft(2, '0')}-${dateParts[1].padLeft(2, '0')}'
+                                  : todayIso();
 
-                        _addTransaction(
-                          TransactionModel(
-                            id: DateTime.now().millisecondsSinceEpoch
-                                .toString(),
-                            kind: kind,
-                            amount: parsed,
-                            category: category,
-                            note: noteController.text.trim().isEmpty
-                                ? null
-                                : noteController.text.trim(),
-                            date: todayIso(),
-                            method: 'Cash',
+                              _addTransaction(
+                                TransactionModel(
+                                  id: DateTime.now().millisecondsSinceEpoch
+                                      .toString(),
+                                  kind: kind,
+                                  amount: parsed,
+                                  category: category,
+                                  note: noteController.text.trim().isEmpty
+                                      ? null
+                                      : noteController.text.trim(),
+                                  date: transactionDate,
+                                  method: 'Cash',
+                                ),
+                              );
+                              Navigator.of(context).pop();
+                            },
+                            icon: const Icon(Icons.add),
+                            label: const Text('Save expense'),
                           ),
-                        );
-                        Navigator.of(context).pop();
-                      },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Save transaction'),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ),
         );
       },
     );
@@ -782,7 +1426,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   Widget _transactionsView() {
     final sorted = _transactions.where((tx) {
       final query = _transactionQuery.trim().toLowerCase();
-      final matchesQuery = query.isEmpty ||
+      final matchesQuery =
+          query.isEmpty ||
           '${tx.category} ${tx.note ?? ''}'.toLowerCase().contains(query);
       final age = DateTime.now().difference(DateTime.parse(tx.date)).inDays;
       final matchesFilter = switch (_transactionFilter) {
@@ -871,7 +1516,12 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              for (final filter in const ['Today', 'This Week', 'This Month', 'All'])
+              for (final filter in const [
+                'Today',
+                'This Week',
+                'This Month',
+                'All',
+              ])
                 _FilterChip(
                   label: filter,
                   selected: _transactionFilter == filter,
@@ -927,14 +1577,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                       InkWell(
                         onTap: () => _toggleFavorite(tx.id),
                         child: Icon(
-                        Icons.star_rounded,
-                        size: 14,
-                        color: tx.favorite ? Colors.orange : Colors.grey,
+                          Icons.star_rounded,
+                          size: 14,
+                          color: tx.favorite ? Colors.orange : Colors.grey,
                         ),
                       ),
                       const SizedBox(width: 8),
                       InkWell(
-                        onTap: () => _removeTransaction(tx.id),
+                        onTap: () => _confirmRemoveTransaction(tx.id),
                         child: const Icon(
                           Icons.delete_outline_rounded,
                           size: 14,
@@ -967,8 +1617,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
               : (used / budget.limit).clamp(0.0, 1.2);
           final cat = categoryOf(budget.category);
           final over = used > budget.limit;
-          return Card(
+          return Container(
             margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDFCFA),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 14,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -988,8 +1649,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => _removeBudget(budget.id),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        onPressed: () => _confirmRemoveBudget(budget.id),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
                         color: Colors.grey,
                         visualDensity: VisualDensity.compact,
                         tooltip: 'Delete budget',
@@ -1035,8 +1699,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           );
         }),
         const SizedBox(height: 16),
-        Card(
-          elevation: 0,
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFDFCFA),
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1065,53 +1739,139 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                       .toList(),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _budgetCategoryController,
-                        onChanged: (value) =>
-                            setState(() => _budgetCategory = value),
-                        decoration: InputDecoration(
-                          hintText: 'Category',
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    final fields = Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _budgetCategoryController,
+                            onChanged: (value) =>
+                                setState(() => _budgetCategory = value),
+                            decoration: InputDecoration(
+                              hintText: 'Category',
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 110,
-                      child: TextField(
-                        controller: _budgetLimitController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Limit',
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: compact ? 88 : 110,
+                          child: TextField(
+                            controller: _budgetLimitController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Limit',
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _addBudget,
-                      icon: const Icon(Icons.add),
-                    ),
-                  ],
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          onPressed: _addBudget,
+                          icon: const Icon(Icons.add),
+                        ),
+                      ],
+                    );
+                    return fields;
+                  },
                 ),
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 24),
+        const _SectionHeader(title: 'Savings goals'),
+        const SizedBox(height: 12),
+        ..._goals.map(
+          (goal) => Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        goal.title,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        '${(goal.current / goal.target * 100).round()}%',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: (goal.current / goal.target).clamp(0.0, 1.0),
+                    minHeight: 9,
+                    borderRadius: BorderRadius.circular(999),
+                    color: const Color(0xFF22AE98),
+                    backgroundColor: Colors.grey.shade200,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${peso(goal.current)} / ${peso(goal.target)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => _contributeGoal(goal.id),
+                      child: const Text('+ ₱500'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _goalTitleController,
+                decoration: const InputDecoration(hintText: 'New goal'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 112,
+              child: TextField(
+                controller: _goalTargetController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(hintText: 'Target'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: _addGoal,
+              icon: const Icon(Icons.add),
+              tooltip: 'Add goal',
+            ),
+          ],
         ),
       ],
     );
@@ -1146,6 +1906,159 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Spending by category',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                ...sorted
+                    .take(6)
+                    .toList()
+                    .asMap()
+                    .entries
+                    .map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 5,
+                              backgroundColor: [
+                                const Color(0xFFF2BB3D),
+                                const Color(0xFF22AE98),
+                                const Color(0xFFC566A5),
+                                const Color(0xFFFF7F20),
+                                const Color(0xFF5C8DBD),
+                                const Color(0xFF8B78C8),
+                              ][item.key % 6],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                item.value.key,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            Text(
+                              '${totals.expenses == 0 ? 0 : (item.value.value / totals.expenses * 100).round()}%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Spending this month',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  '${peso(totals.expenses)} across ${_transactions.length} entries',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [0.08, 0.78, 0.46, 0.48]
+                      .map(
+                        (height) => Container(
+                          width: 26,
+                          height: 90 * height,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22AE98),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: ['Week 1', 'Week 2', 'Week 3', 'Week 4']
+                      .map(
+                        (label) => Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '6-month trend',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 100,
+                  child: CustomPaint(
+                    painter: _SparklinePainter(
+                      points: const [
+                        Offset(8, 66),
+                        Offset(76, 52),
+                        Offset(148, 78),
+                        Offset(220, 40),
+                        Offset(292, 58),
+                        Offset(364, 20),
+                      ],
+                      color: const Color(0xFFFF7F20),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: ['Apr', 'May', 'Jun', 'Jul', 'Aug']
+                      .map(
+                        (label) => Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         Card(
@@ -1222,7 +2135,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   Widget _profileView() {
-    final score = healthScore(_transactions, _budgets);
     final favorites = _transactions.where((tx) => tx.favorite).toList();
 
     return ListView(
@@ -1232,38 +2144,40 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           elevation: 0,
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                const Text(
-                  'Wallet health',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '$score / 100',
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
+                const CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Color(0xFFF39A42),
+                  child: Text(
+                    'M',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Essential spending streak: ${essentialStreak(_transactions)} days',
-                  style: const TextStyle(color: Colors.grey),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mark',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        'Wallet health 100 · Excellent',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                LinearProgressIndicator(
-                  value: score / 100,
-                  minHeight: 10,
-                  borderRadius: BorderRadius.circular(999),
-                  color: score >= 75
-                      ? Colors.green
-                      : score >= 60
-                      ? Colors.orange
-                      : Colors.red,
-                  backgroundColor: Colors.grey.shade200,
-                ),
+                const Icon(Icons.logout_rounded, color: Colors.grey),
               ],
             ),
           ),
@@ -1284,6 +2198,107 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
               ),
             ),
           ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '🏆  Achievements',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Essential Spending Streak: ${essentialStreak(_transactions)} days',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: const [
+                    _AchievementTile(
+                      icon: '🌱',
+                      title: 'Smart Starter',
+                      subtitle: '3-day streak',
+                      unlocked: true,
+                    ),
+                    _AchievementTile(
+                      icon: '🛡️',
+                      title: 'Budget Keeper',
+                      subtitle: '7-day streak',
+                    ),
+                    _AchievementTile(
+                      icon: '🧠',
+                      title: 'Wise Spender',
+                      subtitle: '14-day streak',
+                    ),
+                    _AchievementTile(
+                      icon: '👑',
+                      title: 'Financial Master',
+                      subtitle: '30-day streak',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '🔔  Budget Buddy alerts',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEDC5),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Text(
+                    budgetAlerts(_transactions, _budgets).isEmpty
+                        ? 'Your budgets are on track.'
+                        : budgetAlerts(_transactions, _budgets).first.body,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Column(
+            children:
+                [
+                      'Daily expense reminder',
+                      'Budget threshold alerts',
+                      'Streak celebrations',
+                      'Biometric lock',
+                    ]
+                    .map(
+                      (label) => SwitchListTile(
+                        title: Text(
+                          label,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        value: _settings[label] ?? false,
+                        onChanged: (value) =>
+                            setState(() => _settings[label] = value),
+                      ),
+                    )
+                    .toList(),
+          ),
+        ),
       ],
     );
   }
@@ -1307,7 +2322,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
               Icon(
                 selected ? selectedIcon : icon,
                 size: 21,
-                color: selected ? const Color(0xFF0F766E) : Colors.grey,
+                color: selected
+                    ? const Color(0xFFFF7F20)
+                    : const Color(0xFF77736C),
               ),
               const SizedBox(height: 2),
               Text(
@@ -1315,7 +2332,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: selected ? Colors.black87 : Colors.grey,
+                  color: selected
+                      ? const Color(0xFF1F1F1F)
+                      : const Color(0xFF77736C),
                 ),
               ),
             ],
@@ -1347,11 +2366,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
               children: [
                 CircleAvatar(
                   radius: 22,
-                  backgroundColor: const Color(0xFFCCFBF1),
+                  backgroundColor: const Color(0xFFF39A42),
                   child: Text(
-                    'A',
+                    'M',
                     style: const TextStyle(
-                      color: Color(0xFF0F766E),
+                      color: Colors.white,
                       fontWeight: FontWeight.w900,
                       fontSize: 18,
                     ),
@@ -1364,7 +2383,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Hi, Alex',
+                        'Hi, Mark',
                         style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       Text(
@@ -1376,8 +2395,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                       ),
                       if (_selectedIndex == 0)
                         Text(
-                          MaterialLocalizations.of(context).formatMediumDate(DateTime.now()),
-                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          MaterialLocalizations.of(
+                            context,
+                          ).formatMediumDate(DateTime.now()),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
                         ),
                     ],
                   ),
@@ -1399,7 +2423,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                           height: 17,
                           alignment: Alignment.center,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF0F766E),
+                            color: Color(0xFFFF7F20),
                             shape: BoxShape.circle,
                           ),
                           child: Text(
@@ -1419,13 +2443,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           ),
         ),
       ),
-      body: IndexedStack(index: _selectedIndex, children: pages),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: IndexedStack(index: _selectedIndex, children: pages),
+        ),
+      ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 10),
         child: Material(
-          elevation: 8,
+          elevation: 2,
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(999),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
             child: Row(
@@ -1449,8 +2478,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                       onPressed: _showAddTransactionSheet,
                       tooltip: 'Quick add',
                       elevation: 5,
-                      backgroundColor: const Color(0xFF0F766E),
-                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFFFF7F20),
+                      shape: const CircleBorder(
+                        side: BorderSide(color: Color(0xFFFF7F20), width: 4),
+                      ),
                       child: const Icon(Icons.add, size: 26),
                     ),
                   ),
@@ -1621,6 +2653,80 @@ class _MetricRow extends StatelessWidget {
       ],
     );
   }
+}
+
+class _AchievementTile extends StatelessWidget {
+  final String icon;
+  final String title;
+  final String subtitle;
+  final bool unlocked;
+
+  const _AchievementTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.unlocked = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: (MediaQuery.sizeOf(context).width.clamp(280.0, 520.0) - 80) / 2,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(
+        color: unlocked ? const Color(0xFFD5F3EA) : const Color(0xFFF3F1ED),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 20)),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: unlocked ? Colors.black : Colors.grey,
+            ),
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<Offset> points;
+  final Color color;
+
+  _SparklinePainter({required this.points, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.length < 2) return;
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+    final dotPaint = Paint()..color = color;
+    for (final point in points) {
+      canvas.drawCircle(point, 4, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => false;
 }
 
 Color _colorFromHex(String hexString) {

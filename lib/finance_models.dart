@@ -398,6 +398,12 @@ final List<BudgetModel> SEED_BUDGETS = [
   BudgetModel(id: 'b6', category: 'Entertainment', limit: 1200),
 ];
 
+final List<GoalModel> SEED_GOALS = [
+  GoalModel(id: 'g1', title: 'Emergency fund', target: 50000, current: 23000),
+  GoalModel(id: 'g2', title: 'Travel fund', target: 30000, current: 14500),
+  GoalModel(id: 'g3', title: 'Birthday gift', target: 8000, current: 3500),
+];
+
 List<TransactionModel> createSeedTransactions() {
   final now = DateTime.now();
   TransactionModel tx(

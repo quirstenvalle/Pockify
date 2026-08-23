@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
 import 'package:flutter_app/finance_app.dart';
 
@@ -14,6 +15,12 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const FinanceApp());
+
+    expect(find.text('Welcome back'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), 'mark@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'password');
+    await tester.tap(find.text('Sign In'));
+    await tester.pumpAndSettle();
 
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Current balance'), findsOneWidget);
