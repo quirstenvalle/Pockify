@@ -18,7 +18,7 @@ void main() {
 
     expect(find.text('Welcome back'), findsOneWidget);
     await tester.enterText(find.byType(TextField).at(0), 'mark@example.com');
-    await tester.enterText(find.byType(TextField).at(1), 'password');
+    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
     await tester.tap(find.text('Sign In'));
     await tester.pumpAndSettle();
 

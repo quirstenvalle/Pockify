@@ -23,9 +23,11 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const { user, transactions, budgets } = usePockify();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const alerts = budgetAlerts(transactions, budgets).length;
+  const alertList = budgetAlerts(transactions, budgets);
+  const alerts = alertList.length;
 
   return (
     <div className="app-bg min-h-screen">
@@ -41,8 +43,9 @@ export function AppShell({
               {subtitle && <p className="text-muted-foreground text-xs">{subtitle}</p>}
             </div>
           </div>
-          <Link
-            to="/profile"
+          <button
+            type="button"
+            onClick={() => setNotifOpen(true)}
             className="card-soft text-muted-foreground relative flex size-10 items-center justify-center"
             aria-label="Notifications"
           >
@@ -52,7 +55,7 @@ export function AppShell({
                 {alerts}
               </span>
             )}
-          </Link>
+          </button>
         </header>
 
         {children}
@@ -77,6 +80,41 @@ export function AppShell({
       </nav>
 
       <QuickAdd open={open} onOpenChange={setOpen} />
+
+      {notifOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 px-5 pb-8">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close notifications"
+            onClick={() => setNotifOpen(false)}
+          />
+          <div className="card-raised relative z-10 w-full max-w-md p-5">
+            <h2 className="text-lg font-extrabold">Notifications</h2>
+            <div className="mt-3 space-y-3">
+              {alertList.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No budget alerts right now. You&apos;re all clear.
+                </p>
+              ) : (
+                alertList.map((alert) => (
+                  <div key={alert.title} className="card-soft p-3">
+                    <p className="text-sm font-bold">{alert.title}</p>
+                    <p className="text-muted-foreground mt-1 text-xs">{alert.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotifOpen(false)}
+              className="bg-surface-sunken mt-4 w-full rounded-full py-2.5 text-xs font-bold"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

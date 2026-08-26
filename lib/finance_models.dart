@@ -220,6 +220,102 @@ Map<String, double> spentByCategory(List<TransactionModel> txs) {
   return map;
 }
 
+class ChartPoint {
+  final String label;
+  final double amount;
+
+  const ChartPoint({required this.label, required this.amount});
+}
+
+/// Month expenses grouped into Week 1–4 by day-of-month.
+List<ChartPoint> weeklyBars(List<TransactionModel> txs) {
+  final weeks = List<double>.filled(4, 0);
+  for (final tx in txs.where(
+    (x) => x.kind == TxKind.expense && isThisMonth(x.date),
+  )) {
+    final day = int.tryParse(tx.date.substring(8, 10)) ?? 1;
+    final idx = ((day - 1) ~/ 7).clamp(0, 3);
+    weeks[idx] += tx.amount;
+  }
+  return [
+    for (var i = 0; i < weeks.length; i++)
+      ChartPoint(label: 'Week ${i + 1}', amount: weeks[i]),
+  ];
+}
+
+/// Last 6 calendar months of expense totals (demo fill for empty past months).
+List<ChartPoint> monthlyTrend(List<TransactionModel> txs) {
+  const demoBase = [6200.0, 7400.0, 5100.0, 8300.0, 6900.0];
+  final out = <ChartPoint>[];
+  final now = DateTime.now();
+
+  for (var i = 5; i >= 0; i--) {
+    final dt = DateTime(now.year, now.month - i, 1);
+    final key =
+        '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}';
+    final amount = sumTransactions(
+      txs
+          .where((x) => x.kind == TxKind.expense && x.date.startsWith(key))
+          .toList(),
+    );
+    final demoIndex = 5 - i;
+    out.add(
+      ChartPoint(
+        label: _shortMonth(dt.month),
+        amount: amount > 0
+            ? amount
+            : (demoIndex < demoBase.length ? demoBase[demoIndex] : 0),
+      ),
+    );
+  }
+  return out;
+}
+
+String _shortMonth(int month) {
+  const names = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return names[(month - 1).clamp(0, 11)];
+}
+
+List<double> balanceSparkline(List<TransactionModel> txs, {int points = 12}) {
+  final sorted = [...txs]..sort((a, b) => a.date.compareTo(b.date));
+  if (sorted.isEmpty) {
+    return List<double>.generate(
+      points,
+      (i) => 50 + (i.isEven ? 12.0 : -8.0),
+    );
+  }
+
+  var running = 0.0;
+  final balances = <double>[];
+  for (final tx in sorted) {
+    running += tx.kind == TxKind.income ? tx.amount : -tx.amount;
+    balances.add(running);
+  }
+
+  if (balances.length == 1) {
+    return List<double>.filled(points, balances.first);
+  }
+
+  final step = (balances.length - 1) / (points - 1);
+  return [
+    for (var i = 0; i < points; i++)
+      balances[(i * step).round().clamp(0, balances.length - 1)],
+  ];
+}
+
 CategoryModel categoryOf(String name) => CATEGORIES.firstWhere(
   (category) => category.name == name,
   orElse: () => const CategoryModel(

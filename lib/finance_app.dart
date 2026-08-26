@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'auth_validation.dart';
 import 'finance_models.dart';
+import 'form_validation.dart';
+import 'widgets/charts.dart';
 
 TextTheme _zeroLetterSpacing(TextTheme textTheme) => textTheme.copyWith(
   displayLarge: textTheme.displayLarge?.copyWith(letterSpacing: 0),
@@ -107,16 +110,22 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _submit() {
-    final validEmail = _emailController.text.trim().contains('@');
-    final validPassword = _passwordController.text.trim().length >= 6;
-    final validSignup =
-        _loginMode ||
-        (_nameController.text.trim().isNotEmpty &&
-            _confirmController.text.trim() == _passwordController.text.trim());
-    if (!validEmail || !validPassword || !validSignup) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter valid account details.')),
-      );
+    final result = _loginMode
+        ? validateLogin(
+            email: _emailController.text,
+            password: _passwordController.text,
+          )
+        : validateSignup(
+            name: _nameController.text,
+            email: _emailController.text,
+            password: _passwordController.text,
+            confirmPassword: _confirmController.text,
+            currency: _currency,
+            employmentStatus: _employmentStatus,
+          );
+
+    if (!result.ok) {
+      _showMessage(result.message ?? 'Enter valid account details.');
       return;
     }
     widget.onAuthenticated();
@@ -228,7 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 5),
                             DropdownButtonFormField<String>(
-                              value: _currency,
+                              initialValue: _currency,
                               items:
                                   const [
                                         'Select currency',
@@ -290,7 +299,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 5),
                             DropdownButtonFormField<String>(
-                              value: _employmentStatus,
+                              initialValue: _employmentStatus,
                               items:
                                   const [
                                         'Select status',
@@ -347,6 +356,16 @@ class _AuthScreenState extends State<AuthScreen> {
                               '••••••••',
                             ),
                           ),
+                          if (!_loginMode) ...[
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Use 8+ characters, start with a capital letter, and include a special character.',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF6D6962),
+                              ),
+                            ),
+                          ],
                           if (!_loginMode) ...[
                             const SizedBox(height: 14),
                             TextField(
@@ -576,23 +595,24 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   void _addBudget() {
-    final limit = double.tryParse(_budgetLimitController.text.trim());
-    if (_budgetCategory.trim().isEmpty || limit == null || limit <= 0) {
-      _showMessage('Add a category and a valid limit.');
+    final result = validateBudgetInput(
+      category: _budgetCategory,
+      limitText: _budgetLimitController.text,
+    );
+    if (!result.ok) {
+      _showMessage(result.message ?? 'Add a category and a valid limit.');
       return;
     }
 
+    final budget = buildBudget(
+      category: _budgetCategory,
+      limitText: _budgetLimitController.text,
+    );
     setState(() {
-      _budgets.add(
-        BudgetModel(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          category: _budgetCategory.trim(),
-          limit: limit,
-        ),
-      );
+      _budgets.add(budget);
       _budgetLimitController.clear();
     });
-    _showMessage('${_budgetCategory.trim()} budget set to ${peso(limit)}');
+    _showMessage('${budget.category} budget set to ${peso(budget.limit)}');
   }
 
   void _removeBudget(String id) {
@@ -628,38 +648,32 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   void _addGoal() {
-    final title = _goalTitleController.text.trim();
-    final target = double.tryParse(_goalTargetController.text.trim());
-    if (title.isEmpty || target == null || target <= 0) {
-      _showMessage('Add a goal name and a valid target.');
+    final result = validateGoalInput(
+      title: _goalTitleController.text,
+      targetText: _goalTargetController.text,
+    );
+    if (!result.ok) {
+      _showMessage(result.message ?? 'Add a goal name and a valid target.');
       return;
     }
+
+    final goal = buildGoal(
+      title: _goalTitleController.text,
+      targetText: _goalTargetController.text,
+    );
     setState(() {
-      _goals.add(
-        GoalModel(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          title: title,
-          target: target,
-          current: 0,
-        ),
-      );
+      _goals.add(goal);
       _goalTitleController.clear();
       _goalTargetController.clear();
     });
-    _showMessage('$title goal added.');
+    _showMessage('${goal.title} goal added.');
   }
 
   void _contributeGoal(String id) {
     setState(() {
       final index = _goals.indexWhere((goal) => goal.id == id);
       if (index == -1) return;
-      final goal = _goals[index];
-      _goals[index] = GoalModel(
-        id: goal.id,
-        title: goal.title,
-        target: goal.target,
-        current: (goal.current + 500).clamp(0, goal.target),
-      );
+      _goals[index] = contributeToGoal(_goals[index]);
     });
   }
 
@@ -667,6 +681,63 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showNotifications() {
+    final alerts = budgetAlerts(_transactions, _budgets);
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Notifications',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 12),
+                if (alerts.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No budget alerts right now. You\'re all clear.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                else
+                  ...alerts.map(
+                    (alert) => Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: Icon(
+                          alert.level == 'over'
+                              ? Icons.error_outline
+                              : Icons.warning_amber_rounded,
+                          color: alert.level == 'over'
+                              ? Colors.red
+                              : Colors.orange,
+                        ),
+                        title: Text(
+                          alert.title,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(alert.body),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showAddTransactionSheet() {
@@ -882,27 +953,24 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                           width: double.infinity,
                           child: FilledButton.icon(
                             onPressed: () {
-                              final parsed = double.tryParse(
-                                amountController.text.trim(),
+                              final result = validateAmount(
+                                amountController.text,
                               );
-                              if (parsed == null || parsed <= 0) return;
-                              final dateParts = dateController.text.split('/');
-                              final transactionDate = dateParts.length == 3
-                                  ? '${dateParts[2]}-${dateParts[0].padLeft(2, '0')}-${dateParts[1].padLeft(2, '0')}'
-                                  : todayIso();
+                              if (!result.ok) {
+                                _showMessage(
+                                  result.message ??
+                                      'Enter a valid amount greater than 0.',
+                                );
+                                return;
+                              }
 
                               _addTransaction(
-                                TransactionModel(
-                                  id: DateTime.now().millisecondsSinceEpoch
-                                      .toString(),
+                                buildTransaction(
                                   kind: kind,
-                                  amount: parsed,
+                                  amountText: amountController.text,
                                   category: category,
-                                  note: noteController.text.trim().isEmpty
-                                      ? null
-                                      : noteController.text.trim(),
-                                  date: transactionDate,
-                                  method: 'Cash',
+                                  dateText: dateController.text,
+                                  note: noteController.text,
                                 ),
                               );
                               Navigator.of(context).pop();
@@ -983,17 +1051,17 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                         color: Colors.green.shade100,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(
+                          const Icon(
                             Icons.arrow_upward_rounded,
                             size: 14,
                             color: Colors.green,
                           ),
-                          SizedBox(width: 4),
+                          const SizedBox(width: 4),
                           Text(
-                            '22%',
-                            style: TextStyle(
+                            '${totals.income == 0 ? 0 : ((totals.balance / totals.income) * 100).round()}%',
+                            style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               color: Colors.green,
                             ),
@@ -1004,30 +1072,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  height: 54,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.green.withValues(alpha: 0.25),
-                          Colors.green.withValues(alpha: 0.02),
-                        ],
-                      ),
-                    ),
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Row(
-                        children: [
-                          Expanded(child: SizedBox()),
-                          Icon(Icons.trending_up_rounded, color: Colors.green),
-                        ],
-                      ),
-                    ),
-                  ),
+                BalanceAreaSparkline(
+                  values: balanceSparkline(_transactions),
+                  color: Colors.green,
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1443,20 +1490,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   Widget _transactionsView() {
-    final sorted = _transactions.where((tx) {
-      final query = _transactionQuery.trim().toLowerCase();
-      final matchesQuery =
-          query.isEmpty ||
-          '${tx.category} ${tx.note ?? ''}'.toLowerCase().contains(query);
-      final age = DateTime.now().difference(DateTime.parse(tx.date)).inDays;
-      final matchesFilter = switch (_transactionFilter) {
-        'Today' => age == 0,
-        'This Week' => age <= 7,
-        'This Month' => age <= 31,
-        _ => true,
-      };
-      return matchesQuery && matchesFilter;
-    }).toList()..sort((a, b) => b.date.compareTo(a.date));
+    final sorted = filterTransactions(
+      _transactions,
+      query: _transactionQuery,
+      filter: _transactionFilter,
+    );
     final spent = sorted
         .where((tx) => tx.kind == TxKind.expense)
         .fold<double>(0, (sum, tx) => sum + tx.amount);
@@ -1901,6 +1939,12 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     final sorted = spentByCategory(_transactions).entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final topCategory = sorted.isNotEmpty ? sorted.first.key : '—';
+    final monthExpenses = _transactions
+        .where((tx) => tx.kind == TxKind.expense && isThisMonth(tx.date))
+        .toList();
+    final bars = weeklyBars(_transactions);
+    final trend = monthlyTrend(_transactions);
+    final totalSpent = totals.expenses <= 0 ? 1.0 : totals.expenses;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1938,45 +1982,58 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
-                ...sorted
-                    .take(6)
-                    .toList()
-                    .asMap()
-                    .entries
-                    .map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 7),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 5,
-                              backgroundColor: [
-                                const Color(0xFFF2BB3D),
-                                const Color(0xFF22AE98),
-                                const Color(0xFFC566A5),
-                                const Color(0xFFFF7F20),
-                                const Color(0xFF5C8DBD),
-                                const Color(0xFF8B78C8),
-                              ][item.key % 6],
+                Row(
+                  children: [
+                    CategoryPieChart(slices: sorted.take(6).toList()),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          ...sorted.take(6).map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.only(bottom: 7),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 5,
+                                    backgroundColor: _colorFromHex(
+                                      categoryOf(item.key).color,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      item.key,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${(item.value / totalSpent * 100).round()}%',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
+                          ),
+                          if (sorted.isEmpty)
+                            const Align(
+                              alignment: Alignment.centerLeft,
                               child: Text(
-                                item.value.key,
-                                style: const TextStyle(fontSize: 12),
+                                'No expenses this month yet.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ),
-                            Text(
-                              '${totals.expenses == 0 ? 0 : (item.value.value / totals.expenses * 100).round()}%',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
                     ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1993,41 +2050,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 Text(
-                  '${peso(totals.expenses)} across ${_transactions.length} entries',
+                  '${peso(totals.expenses)} across ${monthExpenses.length} entries',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [0.08, 0.78, 0.46, 0.48]
-                      .map(
-                        (height) => Container(
-                          width: 26,
-                          height: 90 * height,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF22AE98),
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: ['Week 1', 'Week 2', 'Week 3', 'Week 4']
-                      .map(
-                        (label) => Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
+                WeeklyBarChart(bars: bars),
               ],
             ),
           ),
@@ -2044,37 +2071,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 100,
-                  child: CustomPaint(
-                    painter: _SparklinePainter(
-                      points: const [
-                        Offset(8, 66),
-                        Offset(76, 52),
-                        Offset(148, 78),
-                        Offset(220, 40),
-                        Offset(292, 58),
-                        Offset(364, 20),
-                      ],
-                      color: const Color(0xFFFF7F20),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: ['Apr', 'May', 'Jun', 'Jul', 'Aug']
-                      .map(
-                        (label) => Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
+                TrendSparkline(points: trend),
               ],
             ),
           ),
@@ -2091,34 +2088,38 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
-                ...sorted
-                    .take(5)
-                    .map(
-                      (entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(entry.key),
-                                Text(peso(entry.value)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            LinearProgressIndicator(
-                              value: sorted.first.value == 0
-                                  ? 0
-                                  : entry.value / sorted.first.value,
-                              minHeight: 8,
-                              borderRadius: BorderRadius.circular(999),
-                              color: Colors.teal,
-                            ),
-                          ],
-                        ),
+                if (sorted.isEmpty)
+                  const Text(
+                    'No spending data yet.',
+                    style: TextStyle(color: Colors.grey),
+                  )
+                else
+                  ...sorted.take(5).map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(entry.key),
+                              Text(peso(entry.value)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          LinearProgressIndicator(
+                            value: sorted.first.value == 0
+                                ? 0
+                                : entry.value / sorted.first.value,
+                            minHeight: 8,
+                            borderRadius: BorderRadius.circular(999),
+                            color: Colors.teal,
+                          ),
+                        ],
                       ),
                     ),
+                  ),
               ],
             ),
           ),
@@ -2429,7 +2430,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   clipBehavior: Clip.none,
                   children: [
                     IconButton(
-                      onPressed: () => setState(() => _selectedIndex = 4),
+                      onPressed: _showNotifications,
                       icon: const Icon(Icons.notifications_none_rounded),
                       tooltip: 'Notifications',
                     ),
@@ -2715,37 +2716,6 @@ class _AchievementTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SparklinePainter extends CustomPainter {
-  final List<Offset> points;
-  final Color color;
-
-  _SparklinePainter({required this.points, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.length < 2) return;
-    final path = Path()..moveTo(points.first.dx, points.first.dy);
-    for (final point in points.skip(1)) {
-      path.lineTo(point.dx, point.dy);
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round,
-    );
-    final dotPaint = Paint()..color = color;
-    for (final point in points) {
-      canvas.drawCircle(point, 4, dotPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SparklinePainter oldDelegate) => false;
 }
 
 Color _colorFromHex(String hexString) {
