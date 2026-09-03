@@ -220,7 +220,12 @@ export function healthLevel(score: number) {
   return { label: "Critical", tone: "danger" as const };
 }
 
-export type Alert = { level: "info" | "warn" | "over"; title: string; body: string };
+export type Alert = {
+  id: string;
+  level: "info" | "warn" | "over";
+  title: string;
+  body: string;
+};
 
 export function budgetAlerts(txs: Transaction[], budgets: Budget[]): Alert[] {
   const spent = spentByCategory(txs);
@@ -230,12 +235,14 @@ export function budgetAlerts(txs: Transaction[], budgets: Budget[]): Alert[] {
     const pct = used / b.limit;
     if (pct >= 1)
       out.push({
+        id: `budget-${b.category}-over`,
         level: "over",
         title: `You exceeded your ${b.category} budget`,
         body: `${peso(used)} of ${peso(b.limit)} used — ${peso(used - b.limit)} over the limit.`,
       });
     else if (pct >= 0.8)
       out.push({
+        id: `budget-${b.category}-warn`,
         level: "warn",
         title: `${b.category} budget at ${Math.round(pct * 100)}%`,
         body: `${peso(used)} of ${peso(b.limit)} used. Only ${peso(b.limit - used)} remaining.`,
@@ -243,6 +250,9 @@ export function budgetAlerts(txs: Transaction[], budgets: Budget[]): Alert[] {
   });
   return out;
 }
+
+export const unreadAlertCount = (alerts: Alert[], readIds: ReadonlySet<string>) =>
+  alerts.filter((alert) => !readIds.has(alert.id)).length;
 
 export function smartSuggestions(txs: Transaction[]): string[] {
   const week = txs.filter((x) => x.kind === "expense" && daysAgo(x.date) <= 7);

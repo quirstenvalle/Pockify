@@ -21,7 +21,39 @@ class TransactionModel {
     this.favorite = false,
   });
 
+  TransactionModel copyWith({
+    TxKind? kind,
+    double? amount,
+    String? category,
+    String? note,
+    String? date,
+    String? method,
+    bool? favorite,
+  }) {
+    return TransactionModel(
+      id: id,
+      kind: kind ?? this.kind,
+      amount: amount ?? this.amount,
+      category: category ?? this.category,
+      note: note ?? this.note,
+      date: date ?? this.date,
+      method: method ?? this.method,
+      favorite: favorite ?? this.favorite,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
+    'id': id,
+    'kind': kind.name,
+    'amount': amount,
+    'category': category,
+    'note': note,
+    'date': date,
+    'method': method,
+    'favorite': favorite,
+  };
+
+  Map<String, dynamic> toSupabase() => {
     'id': id,
     'kind': kind.name,
     'amount': amount,
@@ -46,6 +78,13 @@ class TransactionModel {
         method: json['method'] as String?,
         favorite: json['favorite'] as bool? ?? false,
       );
+
+  factory TransactionModel.fromSupabase(Map<String, dynamic> json) =>
+      TransactionModel.fromJson({
+        ...json,
+        'date': '${json['date']}'.substring(0, 10),
+        'amount': json['amount'],
+      });
 }
 
 class CategoryModel {
@@ -70,6 +109,18 @@ class BudgetModel {
   final double limit;
 
   BudgetModel({required this.id, required this.category, required this.limit});
+
+  Map<String, dynamic> toSupabase() => {
+    'id': id,
+    'category': category,
+    'limit_amount': limit,
+  };
+
+  factory BudgetModel.fromSupabase(Map<String, dynamic> json) => BudgetModel(
+    id: json['id'] as String,
+    category: json['category'] as String,
+    limit: (json['limit_amount'] as num).toDouble(),
+  );
 }
 
 class GoalModel {
@@ -84,6 +135,20 @@ class GoalModel {
     required this.target,
     required this.current,
   });
+
+  Map<String, dynamic> toSupabase() => {
+    'id': id,
+    'title': title,
+    'target_amount': target,
+    'current_amount': current,
+  };
+
+  factory GoalModel.fromSupabase(Map<String, dynamic> json) => GoalModel(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    target: (json['target_amount'] as num).toDouble(),
+    current: (json['current_amount'] as num).toDouble(),
+  );
 }
 
 String peso(num value) => '₱${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}';
@@ -328,11 +393,17 @@ CategoryModel categoryOf(String name) => CATEGORIES.firstWhere(
 );
 
 class AlertModel {
+  final String id;
   final String level;
   final String title;
   final String body;
 
-  AlertModel({required this.level, required this.title, required this.body});
+  AlertModel({
+    required this.id,
+    required this.level,
+    required this.title,
+    required this.body,
+  });
 }
 
 const List<String> TIPS = [
@@ -398,6 +469,7 @@ List<AlertModel> budgetAlerts(
     if (pct >= 1) {
       alerts.add(
         AlertModel(
+          id: 'budget-${budget.category}-over',
           level: 'over',
           title: 'You exceeded your ${budget.category} budget',
           body:
@@ -407,6 +479,7 @@ List<AlertModel> budgetAlerts(
     } else if (pct >= 0.8) {
       alerts.add(
         AlertModel(
+          id: 'budget-${budget.category}-warn',
           level: 'warn',
           title: '${budget.category} budget at ${((pct * 100).round())}%',
           body:
@@ -418,6 +491,9 @@ List<AlertModel> budgetAlerts(
 
   return alerts;
 }
+
+int unreadAlertCount(List<AlertModel> alerts, Set<String> readIds) =>
+    alerts.where((alert) => !readIds.contains(alert.id)).length;
 
 int essentialStreak(List<TransactionModel> txs) {
   var streak = 0;

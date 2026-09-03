@@ -22,6 +22,9 @@ type Store = {
   removeBudget: (id: string) => void;
   addGoal: (g: Omit<Goal, "id">) => void;
   contributeGoal: (id: string, amount: number) => void;
+  readAlertIds: string[];
+  markAlertRead: (id: string) => void;
+  markAllAlertsRead: (ids: string[]) => void;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -32,6 +35,7 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>(SEED_TRANSACTIONS);
   const [budgets, setBudgets] = useState<Budget[]>(SEED_BUDGETS);
   const [goals, setGoals] = useState<Goal[]>(SEED_GOALS);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
 
   const value = useMemo<Store>(
     () => ({
@@ -39,6 +43,11 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
       transactions,
       budgets,
       goals,
+      readAlertIds,
+      markAlertRead: (id) =>
+        setReadAlertIds((prev) => (prev.includes(id) ? prev : [...prev, id])),
+      markAllAlertsRead: (ids) =>
+        setReadAlertIds((prev) => [...new Set([...prev, ...ids])]),
       addTransaction: (tx) => setTransactions((p) => [{ ...tx, id: uid() }, ...p]),
       updateTransaction: (id, patch) =>
         setTransactions((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t))),
@@ -57,7 +66,7 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
           ),
         ),
     }),
-    [transactions, budgets, goals],
+    [transactions, budgets, goals, readAlertIds],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

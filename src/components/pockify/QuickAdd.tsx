@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CATEGORIES, INCOME_SOURCES, peso, type TxKind } from "@/lib/pockify";
 import { usePockify } from "@/lib/pockify-store";
@@ -13,6 +13,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function QuickAdd({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { addTransaction, transactions } = usePockify();
   const [kind, setKind] = useState<TxKind>("expense");
@@ -20,7 +24,13 @@ export function QuickAdd({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const [category, setCategory] = useState("Food");
   const [source, setSource] = useState("Salary");
   const [note, setNote] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayIsoDate);
+
+  useEffect(() => {
+    if (open) {
+      setDate(todayIsoDate());
+    }
+  }, [open]);
 
   const favorites = transactions.filter((t) => t.favorite).slice(0, 4);
 
@@ -46,7 +56,7 @@ export function QuickAdd({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="card-raised max-w-sm gap-4 border-0 p-6">
+      <DialogContent className="card-raised max-h-[90vh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto border-0 p-6 sm:max-w-lg">
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle className="text-xl">Quick add</DialogTitle>
           <DialogDescription>Log it in a few taps — no backend needed yet.</DialogDescription>

@@ -35,6 +35,14 @@ ValidationResult validatePassword(String password) {
   return const ValidationResult.valid();
 }
 
+ValidationResult validateOtp(String code, {int length = 6}) {
+  final trimmed = code.trim();
+  if (trimmed.length != length || !RegExp(r'^\d+$').hasMatch(trimmed)) {
+    return ValidationResult.invalid('Enter the $length-digit verification code.');
+  }
+  return const ValidationResult.valid();
+}
+
 ValidationResult validateLogin({
   required String email,
   required String password,
@@ -52,6 +60,7 @@ ValidationResult validateSignup({
   required String confirmPassword,
   String currency = 'Select currency',
   String employmentStatus = 'Select status',
+  DateTime? birthDate,
 }) {
   if (name.trim().isEmpty) {
     return const ValidationResult.invalid('Enter your full name.');
@@ -68,6 +77,9 @@ ValidationResult validateSignup({
   }
   if (currency == 'Select currency') {
     return const ValidationResult.invalid('Select your preferred currency.');
+  }
+  if (birthDate == null) {
+    return const ValidationResult.invalid('Select your birth date.');
   }
   if (employmentStatus == 'Select status') {
     return const ValidationResult.invalid('Select your employment status.');

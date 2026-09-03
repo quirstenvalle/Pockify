@@ -64,8 +64,8 @@ function AnalyticsPage() {
     <AppShell title="Insights" subtitle="Where your money goes">
       <section className="card-raised p-5">
         <h2 className="text-sm font-extrabold">Spending by category</h2>
-        <div className="flex items-center gap-2">
-          <div className="h-40 w-36 shrink-0">
+        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+          <div className="h-40 w-full max-w-[9rem] shrink-0 sm:w-36">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -83,7 +83,7 @@ function AnalyticsPage() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <ul className="flex-1 space-y-1.5">
+          <ul className="w-full flex-1 space-y-1.5 sm:w-auto">
             {pie.slice(0, 6).map((p) => (
               <li key={p.name} className="flex items-center gap-2 text-xs">
                 <span
@@ -143,7 +143,7 @@ function AnalyticsPage() {
         </div>
       </section>
 
-      <section className="mt-4 grid grid-cols-2 gap-3">
+      <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Avg. daily spend" value={peso(avgDaily)} />
         <Stat label="Biggest this week" value={biggest ? peso(biggest.amount) : "₱0"} />
         <Stat label="Top category" value={pie[0]?.name ?? "—"} />

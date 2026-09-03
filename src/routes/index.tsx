@@ -81,14 +81,14 @@ function Dashboard() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className="border-border mt-2 grid grid-cols-3 gap-2 border-t pt-4">
+        <div className="border-border mt-2 grid grid-cols-1 gap-3 border-t pt-4 sm:grid-cols-3 sm:gap-2">
           <Mini label="Income" value={peso(totals.income)} tone="text-success" />
           <Mini label="Expenses" value={peso(totals.expenses)} />
           <Mini label="Budget left" value={peso(Math.max(0, budgetTotal - budgetUsed))} />
         </div>
       </section>
 
-      <section className="mt-4 grid grid-cols-2 gap-3">
+      <section className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="card-soft p-4">
           <p className="text-muted-foreground text-[11px] font-semibold">Wallet Health</p>
           <div className="mt-2 flex items-end gap-1">
