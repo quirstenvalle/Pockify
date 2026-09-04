@@ -17,6 +17,7 @@ class AuthRepository {
   static const _sessionKey = 'pockify_auth_session_v1';
   static const _tokenKey = 'pockify_auth_token_v1';
   static const _demoMailboxKey = 'pockify_demo_mailbox_v1';
+  static const _pendingSignupKey = 'pockify_pending_signup_v1';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
@@ -162,6 +163,35 @@ class AuthRepository {
     final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
     map.remove(email.trim().toLowerCase());
     await prefs.setString(_demoMailboxKey, jsonEncode(map));
+  }
+
+  Future<void> savePendingSignup(PendingSignup pending) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_pendingSignupKey);
+    final map = raw == null || raw.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    map[pending.email.trim().toLowerCase()] = pending.toJson();
+    await prefs.setString(_pendingSignupKey, jsonEncode(map));
+  }
+
+  Future<PendingSignup?> getPendingSignup(String email) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_pendingSignupKey);
+    if (raw == null || raw.isEmpty) return null;
+    final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    final row = map[email.trim().toLowerCase()];
+    if (row is! Map) return null;
+    return PendingSignup.fromJson(Map<String, dynamic>.from(row));
+  }
+
+  Future<void> clearPendingSignup(String email) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_pendingSignupKey);
+    if (raw == null || raw.isEmpty) return;
+    final map = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    map.remove(email.trim().toLowerCase());
+    await prefs.setString(_pendingSignupKey, jsonEncode(map));
   }
 }
 

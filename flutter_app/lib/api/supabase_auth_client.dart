@@ -1,3 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthUser;
 
 import '../auth/auth_models.dart' as pockify;
@@ -6,6 +11,8 @@ import 'api_config.dart';
 /// Supabase Auth adapter mapped to Pockify [pockify.AuthResult].
 class SupabaseAuthClient {
   SupabaseClient get _client => Supabase.instance.client;
+
+  String? get _emailRedirectTo => kIsWeb ? Uri.base.origin : null;
 
   Future<pockify.AuthResult> register({
     required String name,
@@ -17,8 +24,8 @@ class SupabaseAuthClient {
     double? monthlyIncome,
     double? monthlyBudgetGoal,
   }) async {
+    final normalized = email.trim().toLowerCase();
     try {
-      final normalized = email.trim().toLowerCase();
       final cleanCurrency =
           (currency == null || currency == 'Select currency') ? null : currency;
       final cleanEmployment =
@@ -54,20 +61,39 @@ class SupabaseAuthClient {
         );
       }
 
-      // Never keep a session before email OTP verification completes.
-      await _client.auth.signOut();
-
-      try {
-        await _client.auth.resend(
-          type: OtpType.signup,
-          email: normalized,
+      // Existing accounts are returned with an empty identities list.
+      if (user.identities != null && user.identities!.isEmpty) {
+        return pockify.AuthResult.failure(
+          pockify.AuthFailureCode.emailTaken,
+          'An account with this email already exists. Sign in instead.',
         );
-      } catch (_) {
-        // Signup already triggers the first email when Confirm email is on.
+      }
+
+      if (response.session != null) {
+        final mapped = (await _userWithProfile(user)).copyWith(
+          emailVerified: true,
+        );
+        await _upsertProfile(mapped);
+        return pockify.AuthResult.success(
+          mapped,
+          token: response.session!.accessToken,
+        );
+      }
+
+      final signedIn = await login(
+        email: normalized,
+        password: password,
+        resendIfUnverified: false,
+      );
+      if (signedIn.ok && signedIn.user != null) {
+        return pockify.AuthResult.success(
+          signedIn.user!.copyWith(emailVerified: true),
+          token: signedIn.token,
+        );
       }
 
       final mapped = _mapUser(user, profile: null).copyWith(
-        emailVerified: false,
+        emailVerified: true,
         currency: cleanCurrency,
         employmentStatus: cleanEmployment,
         birthDate: birthDate,
@@ -77,13 +103,20 @@ class SupabaseAuthClient {
 
       return pockify.AuthResult.failure(
         pockify.AuthFailureCode.emailUnverified,
-        'Account created. Enter the verification code we sent to your email.',
+        'Account created, but sign-in is not ready yet. Try signing in.',
         requiresVerification: true,
         user: mapped,
         demoCode: null,
       );
     } on AuthException catch (error) {
-      return _mapAuthException(error, fallbackRequiresVerification: true);
+      final mapped = _mapAuthException(
+        error,
+        fallbackRequiresVerification: true,
+      );
+      if (mapped.failureCode == pockify.AuthFailureCode.emailTaken) {
+        return mapped;
+      }
+      return mapped;
     } catch (error) {
       return pockify.AuthResult.failure(
         pockify.AuthFailureCode.invalidCredentials,
@@ -96,6 +129,7 @@ class SupabaseAuthClient {
   Future<pockify.AuthResult> login({
     required String email,
     required String password,
+    bool resendIfUnverified = true,
   }) async {
     try {
       final response = await _client.auth.signInWithPassword(
@@ -113,10 +147,9 @@ class SupabaseAuthClient {
       final mapped = await _userWithProfile(user);
       if (!mapped.emailVerified) {
         await _client.auth.signOut();
-        await resendCode(email: email);
         return pockify.AuthResult.failure(
           pockify.AuthFailureCode.emailUnverified,
-          'Verify your email before signing in. We sent a new code.',
+          'Email is not verified yet. Enter the 6-digit code previewed for this address.',
           requiresVerification: true,
           user: mapped,
         );
@@ -129,10 +162,9 @@ class SupabaseAuthClient {
     } on AuthException catch (error) {
       final mapped = _mapAuthException(error);
       if (mapped.failureCode == pockify.AuthFailureCode.emailUnverified) {
-        await resendCode(email: email);
         return pockify.AuthResult.failure(
           pockify.AuthFailureCode.emailUnverified,
-          'Verify your email before signing in. We sent a new code.',
+          'Email is not verified yet. Enter the 6-digit code previewed for this address.',
           requiresVerification: true,
         );
       }
@@ -145,6 +177,62 @@ class SupabaseAuthClient {
     }
   }
 
+  Future<pockify.AuthResult> signInWithGoogle() async {
+    try {
+      if (!await _isGoogleProviderEnabled()) {
+        return pockify.AuthResult.failure(
+          pockify.AuthFailureCode.invalidCredentials,
+          'Google sign-in is not enabled on this Supabase project. Enable Google under Authentication → Providers, then try again.',
+        );
+      }
+
+      final launched = await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: _emailRedirectTo,
+        authScreenLaunchMode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+        queryParams: const {'prompt': 'select_account'},
+      );
+      if (!launched) {
+        return pockify.AuthResult.failure(
+          pockify.AuthFailureCode.invalidCredentials,
+          'Could not open Google sign-in. Allow popups, then try again.',
+        );
+      }
+      return pockify.AuthResult.redirecting();
+    } on AuthException catch (error) {
+      return _mapAuthException(error);
+    } catch (error) {
+      return pockify.AuthResult.failure(
+        pockify.AuthFailureCode.invalidCredentials,
+        'Google sign-in failed. ($error)',
+      );
+    }
+  }
+
+  Future<bool> _isGoogleProviderEnabled() async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('${ApiConfig.supabaseUrl}/auth/v1/settings'),
+            headers: {
+              'apikey': ApiConfig.supabasePublishableKey,
+              'Authorization': 'Bearer ${ApiConfig.supabasePublishableKey}',
+            },
+          )
+          .timeout(ApiConfig.timeout);
+      if (response.statusCode != 200) return false;
+      final json = jsonDecode(response.body);
+      if (json is! Map<String, dynamic>) return false;
+      final external = json['external'];
+      if (external is! Map) return false;
+      return external['google'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<pockify.AuthResult> verifyEmail({
     required String email,
     required String code,
@@ -153,20 +241,7 @@ class SupabaseAuthClient {
     final token = code.trim();
 
     try {
-      AuthResponse response;
-      try {
-        response = await _client.auth.verifyOTP(
-          type: OtpType.signup,
-          email: normalized,
-          token: token,
-        );
-      } on AuthException {
-        response = await _client.auth.verifyOTP(
-          type: OtpType.email,
-          email: normalized,
-          token: token,
-        );
-      }
+      final response = await _verifyEmailOtp(email: normalized, token: token);
 
       final user = response.user;
       if (user == null || response.session == null) {
@@ -198,13 +273,10 @@ class SupabaseAuthClient {
 
   Future<pockify.AuthResult> resendCode({required String email}) async {
     try {
-      await _client.auth.resend(
-        type: OtpType.signup,
-        email: email.trim().toLowerCase(),
-      );
+      await _resendEmailOtp(email.trim().toLowerCase());
       return pockify.AuthResult.failure(
         pockify.AuthFailureCode.emailUnverified,
-        "We've sent a new verification code to your email.",
+        "We've sent a new 6-digit verification code to your email.",
         requiresVerification: true,
       );
     } on AuthException catch (error) {
@@ -245,7 +317,7 @@ class SupabaseAuthClient {
       }
       return pockify.AuthResult.failure(
         pockify.AuthFailureCode.emailUnverified,
-        "We've sent a verification code to your new email address.",
+        "We've sent a confirmation email to your new address. Click the link inside it.",
         requiresVerification: true,
         user: await _userWithProfile(user),
       );
@@ -256,6 +328,55 @@ class SupabaseAuthClient {
 
   Future<Duration?> remainingOtpTime(String email) async {
     return const Duration(minutes: 10);
+  }
+
+  StreamSubscription<AuthState> watchVerified(void Function() onVerified) {
+    return _client.auth.onAuthStateChange.listen((data) {
+      final event = data.event;
+      if (event != AuthChangeEvent.signedIn &&
+          event != AuthChangeEvent.initialSession &&
+          event != AuthChangeEvent.userUpdated) {
+        return;
+      }
+      final user = data.session?.user;
+      if (user == null) return;
+      if (user.emailConfirmedAt != null ||
+          user.identities?.any((identity) => identity.provider == 'google') ==
+              true) {
+        onVerified();
+      }
+    });
+  }
+
+  Future<AuthResponse> _verifyEmailOtp({
+    required String email,
+    required String token,
+  }) async {
+    AuthException? lastError;
+    for (final type in const [
+      OtpType.signup,
+      OtpType.email,
+      OtpType.magiclink,
+    ]) {
+      try {
+        return await _client.auth.verifyOTP(
+          type: type,
+          email: email,
+          token: token,
+        );
+      } on AuthException catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ??
+        AuthException('This verification code is invalid or has expired.');
+  }
+
+  Future<void> _resendEmailOtp(String email) async {
+    await _client.auth.resend(
+      type: OtpType.signup,
+      email: email,
+    );
   }
 
   Future<pockify.AuthResult> me() async {
@@ -278,15 +399,6 @@ class SupabaseAuthClient {
       }
 
       final mapped = await _userWithProfile(user);
-      if (!mapped.emailVerified) {
-        return pockify.AuthResult.failure(
-          pockify.AuthFailureCode.emailUnverified,
-          'Email is not verified yet.',
-          requiresVerification: true,
-          user: mapped,
-        );
-      }
-
       return pockify.AuthResult.success(mapped, token: session.accessToken);
     } on AuthException catch (error) {
       return _mapAuthException(error);
@@ -363,7 +475,9 @@ class SupabaseAuthClient {
       email: (user.email ?? '').toLowerCase(),
       passwordHash: '',
       passwordSalt: '',
-      emailVerified: user.emailConfirmedAt != null,
+      emailVerified: user.emailConfirmedAt != null ||
+          (user.identities?.any((identity) => identity.provider == 'google') ??
+              false),
       currency: (profile?['currency'] as String?) ?? meta['currency'] as String?,
       employmentStatus: (profile?['employment_status'] as String?) ??
           meta['employment_status'] as String?,
@@ -401,6 +515,14 @@ class SupabaseAuthClient {
         'An account with this email already exists. Sign in instead.',
       );
     }
+    if (code == 'validation_failed' ||
+        lower.contains('unsupported provider') ||
+        lower.contains('provider is not enabled')) {
+      return pockify.AuthResult.failure(
+        pockify.AuthFailureCode.invalidCredentials,
+        'Google sign-in is not enabled on this Supabase project. Enable Google under Authentication → Providers.',
+      );
+    }
     if (code == 'invalid_credentials' ||
         lower.contains('invalid login') ||
         lower.contains('invalid credentials') ||
@@ -416,7 +538,7 @@ class SupabaseAuthClient {
         lower.contains('expired')) {
       return pockify.AuthResult.failure(
         pockify.AuthFailureCode.invalidCode,
-        message,
+        'That code is invalid or already used. Tap Resend Code and enter the newest 6-digit code, or continue with Google.',
         requiresVerification: true,
       );
     }

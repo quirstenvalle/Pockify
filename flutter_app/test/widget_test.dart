@@ -52,7 +52,7 @@ void main() {
 
     await tester.pumpWidget(const FinanceApp());
 
-    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Welcome, PockiFriend!'), findsOneWidget);
     await tester.enterText(find.byType(TextField).at(0), 'mark@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'Password1!');
     await tester.tap(find.text('Sign In'));
@@ -81,14 +81,11 @@ void main() {
     );
 
     expect(find.text('Verify your email'), findsOneWidget);
-    expect(
-      find.textContaining("We've sent a verification code"),
-      findsOneWidget,
-    );
+    expect(find.textContaining("We've emailed a 6-digit code"), findsOneWidget);
     expect(find.text('Verify Email'), findsOneWidget);
     expect(find.text('Resend Code'), findsOneWidget);
-    expect(find.textContaining('Demo inbox'), findsOneWidget);
     expect(find.text('Change'), findsOneWidget);
+    expect(find.textContaining('123456'), findsNothing);
     expect(verified, isFalse);
   });
 }

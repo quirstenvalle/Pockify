@@ -27,6 +27,40 @@ class ApiConfig {
     'POCKIFY_SUPABASE_KEY',
     defaultValue: 'sb_publishable_MVCsStwZSCVYoz6phKNKNw_3ZsYr5oG',
   );
+
+  /// Shared FormSubmit inbox (already activated for the team).
+  /// Signup OTPs are sent here and CC'd to whatever email the user typed.
+  /// Do not change this unless the team activates a new FormSubmit inbox.
+  static const String otpFormInbox = String.fromEnvironment(
+    'POCKIFY_OTP_FORM_INBOX',
+    defaultValue: 'emmanuelcorpuz1216@gmail.com',
+  );
+
+  /// Optional Google Apps Script web app URL from `otp_mailer.gs`.
+  static const String otpMailerUrl = String.fromEnvironment(
+    'POCKIFY_OTP_MAILER_URL',
+    defaultValue: '',
+  );
+
+  /// Optional EmailJS Gmail service (alternative to Apps Script).
+  static const String emailJsServiceId = String.fromEnvironment(
+    'POCKIFY_EMAILJS_SERVICE_ID',
+    defaultValue: '',
+  );
+  static const String emailJsTemplateId = String.fromEnvironment(
+    'POCKIFY_EMAILJS_TEMPLATE_ID',
+    defaultValue: '',
+  );
+  static const String emailJsPublicKey = String.fromEnvironment(
+    'POCKIFY_EMAILJS_PUBLIC_KEY',
+    defaultValue: '',
+  );
+
+  static bool get hasAppsScriptMailer => otpMailerUrl.trim().isNotEmpty;
+  static bool get hasEmailJsMailer =>
+      emailJsServiceId.trim().isNotEmpty &&
+      emailJsTemplateId.trim().isNotEmpty &&
+      emailJsPublicKey.trim().isNotEmpty;
 }
 
 enum AuthBackend {

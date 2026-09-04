@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pockify Flutter (Edge)",
+      "request": "launch",
+      "type": "dart",
+      "program": "flutter_app/lib/main.dart",
+      "args": ["-d", "edge"]
+    },
+    {
+      "name": "Pockify Flutter (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "flutter_app/lib/main.dart",
+      "args": ["-d", "chrome"]
+    }
+  ]
+}

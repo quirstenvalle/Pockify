@@ -108,6 +108,69 @@ class AuthUser {
   );
 }
 
+class PendingSignup {
+  final String name;
+  final String email;
+  final String password;
+  final String? currency;
+  final String? employmentStatus;
+  final DateTime? birthDate;
+  final double? monthlyIncome;
+  final double? monthlyBudgetGoal;
+
+  const PendingSignup({
+    required this.name,
+    required this.email,
+    required this.password,
+    this.currency,
+    this.employmentStatus,
+    this.birthDate,
+    this.monthlyIncome,
+    this.monthlyBudgetGoal,
+  });
+
+  PendingSignup copyWith({
+    String? name,
+    String? email,
+    String? password,
+  }) {
+    return PendingSignup(
+      name: name ?? this.name,
+      email: email ?? this.email,
+      password: password ?? this.password,
+      currency: currency,
+      employmentStatus: employmentStatus,
+      birthDate: birthDate,
+      monthlyIncome: monthlyIncome,
+      monthlyBudgetGoal: monthlyBudgetGoal,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'email': email,
+    'password': password,
+    'currency': currency,
+    'employmentStatus': employmentStatus,
+    'birthDate': birthDate?.toIso8601String(),
+    'monthlyIncome': monthlyIncome,
+    'monthlyBudgetGoal': monthlyBudgetGoal,
+  };
+
+  factory PendingSignup.fromJson(Map<String, dynamic> json) => PendingSignup(
+    name: json['name'] as String? ?? '',
+    email: (json['email'] as String? ?? '').toLowerCase(),
+    password: json['password'] as String? ?? '',
+    currency: json['currency'] as String?,
+    employmentStatus: json['employmentStatus'] as String?,
+    birthDate: json['birthDate'] == null
+        ? null
+        : DateTime.tryParse(json['birthDate'] as String),
+    monthlyIncome: (json['monthlyIncome'] as num?)?.toDouble(),
+    monthlyBudgetGoal: (json['monthlyBudgetGoal'] as num?)?.toDouble(),
+  );
+}
+
 class EmailVerificationChallenge {
   final String email;
   final String codeHash;
@@ -204,6 +267,7 @@ class AuthResult {
   final bool requiresVerification;
   final String? demoCode;
   final String? token;
+  final bool redirecting;
 
   const AuthResult({
     required this.ok,
@@ -213,6 +277,7 @@ class AuthResult {
     this.requiresVerification = false,
     this.demoCode,
     this.token,
+    this.redirecting = false,
   });
 
   factory AuthResult.success(
@@ -224,6 +289,12 @@ class AuthResult {
     user: user,
     demoCode: demoCode,
     token: token,
+  );
+
+  factory AuthResult.redirecting() => const AuthResult(
+    ok: false,
+    redirecting: true,
+    message: 'Continue in the Google window to finish signing in.',
   );
 
   factory AuthResult.failure(

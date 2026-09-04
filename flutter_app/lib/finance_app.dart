@@ -42,11 +42,33 @@ class _FinanceAppState extends State<FinanceApp> {
   bool _authenticated = false;
   String? _pendingVerificationEmail;
   String? _pendingDemoCode;
+  String? _pendingPassword;
+  void Function()? _cancelAuthWatch;
 
   @override
   void initState() {
     super.initState();
+    _cancelAuthWatch = AuthService.instance.watchRemoteVerification(
+      _onRemoteAuthenticated,
+    );
     _restoreSession();
+  }
+
+  @override
+  void dispose() {
+    _cancelAuthWatch?.call();
+    super.dispose();
+  }
+
+  void _onRemoteAuthenticated() {
+    if (!mounted) return;
+    setState(() {
+      _authenticated = true;
+      _booting = false;
+      _pendingVerificationEmail = null;
+      _pendingDemoCode = null;
+      _pendingPassword = null;
+    });
   }
 
   Future<void> _restoreSession() async {
@@ -65,6 +87,7 @@ class _FinanceAppState extends State<FinanceApp> {
       _authenticated = false;
       _pendingVerificationEmail = null;
       _pendingDemoCode = null;
+      _pendingPassword = null;
     });
   }
 
@@ -116,22 +139,26 @@ class _FinanceAppState extends State<FinanceApp> {
           : _pendingVerificationEmail != null
           ? EmailVerificationScreen(
               email: _pendingVerificationEmail!,
+              password: _pendingPassword,
               initialDemoCode: _pendingDemoCode,
               onVerified: () => setState(() {
                 _authenticated = true;
                 _pendingVerificationEmail = null;
                 _pendingDemoCode = null;
+                _pendingPassword = null;
               }),
               onBackToAuth: () => setState(() {
                 _pendingVerificationEmail = null;
                 _pendingDemoCode = null;
+                _pendingPassword = null;
               }),
             )
           : AuthScreen(
               onAuthenticated: () => setState(() => _authenticated = true),
-              onNeedsVerification: (email, demoCode) => setState(() {
+              onNeedsVerification: (email, demoCode, password) => setState(() {
                 _pendingVerificationEmail = email;
                 _pendingDemoCode = demoCode;
+                _pendingPassword = password;
               }),
             ),
     );
@@ -146,7 +173,8 @@ class AuthScreen extends StatefulWidget {
   });
 
   final VoidCallback onAuthenticated;
-  final void Function(String email, String? demoCode) onNeedsVerification;
+  final void Function(String email, String? demoCode, String password)
+      onNeedsVerification;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -264,6 +292,7 @@ class _AuthScreenState extends State<AuthScreen> {
           widget.onNeedsVerification(
             _emailController.text.trim().toLowerCase(),
             authResult.demoCode,
+            _passwordController.text,
           );
           return;
         }
@@ -273,6 +302,7 @@ class _AuthScreenState extends State<AuthScreen> {
           widget.onNeedsVerification(
             _emailController.text.trim().toLowerCase(),
             authResult.demoCode,
+            _passwordController.text,
           );
           return;
         }
@@ -292,6 +322,7 @@ class _AuthScreenState extends State<AuthScreen> {
         widget.onNeedsVerification(
           _emailController.text.trim().toLowerCase(),
           authResult.demoCode,
+          _passwordController.text,
         );
         return;
       }
@@ -304,17 +335,42 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  Future<void> _showErrorDialog(String message) {
+  Future<void> _signInWithGoogle() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _auth.signInWithGoogle();
+      if (!mounted) return;
+      if (result.ok && result.user != null) {
+        widget.onAuthenticated();
+        return;
+      }
+      if (result.redirecting) {
+        return;
+      }
+      await _showErrorDialog(
+        result.message ?? 'Google sign-in failed. Please try again.',
+        title: 'Google sign-in',
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _showErrorDialog(
+    String message, {
+    String title = 'Invalid input',
+  }) {
     return _showFloatingModal(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.error_outline, color: Color(0xFFDC2626), size: 48),
           const SizedBox(height: 14),
-          const Text(
-            'Invalid input',
+          Text(
+            title,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           Text(
@@ -449,7 +505,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            _loginMode ? 'Welcome back' : 'Create Account',
+                            _loginMode ? 'Welcome, PockiFriend!' : 'Create Account',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 26,
@@ -723,10 +779,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           const SizedBox(height: 16),
                           OutlinedButton.icon(
-                            onPressed: () => _showMessage(
-                              'Google sign-in is not connected yet.',
-                            ),
-                            icon: const Icon(Icons.login, size: 16),
+                            onPressed: _busy ? null : _signInWithGoogle,
+                            icon: const Icon(Icons.g_mobiledata, size: 22),
                             label: const Text(
                               'Continue with Google',
                               style: TextStyle(fontSize: 11),
