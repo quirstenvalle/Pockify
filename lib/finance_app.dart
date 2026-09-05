@@ -10,25 +10,9 @@ import 'finance_models.dart';
 import 'form_validation.dart';
 import 'responsive.dart';
 import 'screens/email_verification_screen.dart';
+import 'theme/app_theme.dart';
+import 'widgets/category_icon.dart';
 import 'widgets/charts.dart';
-
-TextTheme _zeroLetterSpacing(TextTheme textTheme) => textTheme.copyWith(
-  displayLarge: textTheme.displayLarge?.copyWith(letterSpacing: 0),
-  displayMedium: textTheme.displayMedium?.copyWith(letterSpacing: 0),
-  displaySmall: textTheme.displaySmall?.copyWith(letterSpacing: 0),
-  headlineLarge: textTheme.headlineLarge?.copyWith(letterSpacing: 0),
-  headlineMedium: textTheme.headlineMedium?.copyWith(letterSpacing: 0),
-  headlineSmall: textTheme.headlineSmall?.copyWith(letterSpacing: 0),
-  titleLarge: textTheme.titleLarge?.copyWith(letterSpacing: 0),
-  titleMedium: textTheme.titleMedium?.copyWith(letterSpacing: 0),
-  titleSmall: textTheme.titleSmall?.copyWith(letterSpacing: 0),
-  bodyLarge: textTheme.bodyLarge?.copyWith(letterSpacing: 0),
-  bodyMedium: textTheme.bodyMedium?.copyWith(letterSpacing: 0),
-  bodySmall: textTheme.bodySmall?.copyWith(letterSpacing: 0),
-  labelLarge: textTheme.labelLarge?.copyWith(letterSpacing: 0),
-  labelMedium: textTheme.labelMedium?.copyWith(letterSpacing: 0),
-  labelSmall: textTheme.labelSmall?.copyWith(letterSpacing: 0),
-);
 
 class FinanceApp extends StatefulWidget {
   const FinanceApp({super.key});
@@ -73,38 +57,8 @@ class _FinanceAppState extends State<FinanceApp> {
     return MaterialApp(
       title: 'Pockify',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFF39A42)),
-        scaffoldBackgroundColor: const Color(0xFFF3F1EB),
-        cardColor: const Color(0xFFFDFCFA),
-        fontFamilyFallback: const ['NotoColorEmoji'],
-        textTheme: _zeroLetterSpacing(Typography.material2021().black),
-        cardTheme: CardThemeData(
-          color: const Color(0xFFFDFCFA),
-          elevation: 0,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFFF0EEE9),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: const BorderSide(color: Color(0xFFF39A42)),
-          ),
-        ),
-      ),
+      theme: buildPockifyTheme(),
+      builder: pockifyTextScaler,
       home: _booting
           ? const Scaffold(
               body: Center(
@@ -773,8 +727,11 @@ class _AuthScreenState extends State<AuthScreen> {
   InputDecoration _authInput(IconData? icon, String hint) {
     return InputDecoration(
       hintText: hint,
-      prefixIcon: Icon(icon, size: 17),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      prefixIcon: icon == null
+          ? null
+          : Icon(icon, size: 18),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
         borderSide: const BorderSide(color: Color(0xFFD8D3CB)),
@@ -1952,11 +1909,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '${cat.icon} ${budget.category}',
+                      CategoryChipLabel(
+                        name: budget.category,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
+                          height: 1.3,
+                          letterSpacing: 0,
                         ),
                       ),
                       Text(
@@ -2009,10 +1968,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                             color: Colors.grey.shade100,
                           ),
                           child: Center(
-                            child: Text(
-                              categoryOf(tx.category).icon,
-                              style: const TextStyle(fontSize: 18),
-                            ),
+                            child: CategoryIcon(tx.category, size: 18),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -2213,10 +2169,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
-                  child: Text(
-                    categoryOf(tx.category).icon,
-                    style: const TextStyle(fontSize: 18),
-                  ),
+                  child: CategoryIcon(tx.category, size: 18),
                 ),
               ),
               title: Text(
@@ -2285,7 +2238,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           final pct = budget.limit == 0
               ? 0.0
               : (used / budget.limit).clamp(0.0, 1.2);
-          final cat = categoryOf(budget.category);
           final over = used > budget.limit;
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -2309,7 +2261,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                     children: [
                       CircleAvatar(
                         backgroundColor: Colors.teal.shade50,
-                        child: Text(cat.icon),
+                        child: CategoryIcon(budget.category, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -2398,7 +2350,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                       .take(8)
                       .map(
                         (c) => ChoiceChip(
-                          label: Text('${c.icon} ${c.name}'),
+                          label: CategoryChipLabel(name: c.name),
                           selected: _budgetCategory == c.name,
                           onSelected: (_) => setState(() {
                             _budgetCategory = c.name;
@@ -2914,9 +2866,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '🏆  Achievements',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const Row(
+                  children: [
+                    Icon(Icons.emoji_events_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'Achievements',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
                   'Essential Spending Streak: ${essentialStreak(_transactions)} days',
@@ -2928,23 +2890,23 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   runSpacing: 8,
                   children: const [
                     _AchievementTile(
-                      icon: '🌱',
+                      icon: Icons.eco_rounded,
                       title: 'Smart Starter',
                       subtitle: '3-day streak',
                       unlocked: true,
                     ),
                     _AchievementTile(
-                      icon: '🛡️',
+                      icon: Icons.shield_rounded,
                       title: 'Budget Keeper',
                       subtitle: '7-day streak',
                     ),
                     _AchievementTile(
-                      icon: '🧠',
+                      icon: Icons.psychology_rounded,
                       title: 'Wise Spender',
                       subtitle: '14-day streak',
                     ),
                     _AchievementTile(
-                      icon: '👑',
+                      icon: Icons.workspace_premium_rounded,
                       title: 'Financial Master',
                       subtitle: '30-day streak',
                     ),
@@ -2961,9 +2923,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '🔔  Budget Buddy alerts',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const Row(
+                  children: [
+                    Icon(Icons.notifications_active_rounded, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'Budget Buddy alerts',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 Container(
@@ -3473,7 +3445,7 @@ class _MetricRow extends StatelessWidget {
 }
 
 class _AchievementTile extends StatelessWidget {
-  final String icon;
+  final IconData icon;
   final String title;
   final String subtitle;
   final bool unlocked;
@@ -3496,18 +3468,31 @@ class _AchievementTile extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(height: 4),
+          Icon(
+            icon,
+            size: 22,
+            color: unlocked ? const Color(0xFF0F766E) : Colors.grey,
+          ),
+          const SizedBox(height: 6),
           Text(
             title,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontWeight: FontWeight.w800,
+              height: 1.3,
+              letterSpacing: 0,
               color: unlocked ? Colors.black : Colors.grey,
             ),
           ),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              height: 1.3,
+              letterSpacing: 0,
+              color: Colors.grey,
+            ),
           ),
         ],
       ),

@@ -108,9 +108,14 @@ class OtpInputRowState extends State<OtpInputRow> {
                 keyboardType: TextInputType.number,
                 maxLength: 1,
                 style: const TextStyle(
+                  fontFamily: 'NotoSans',
                   fontSize: 20,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                  height: 1.2,
+                  leadingDistribution: TextLeadingDistribution.even,
                 ),
+                textAlignVertical: TextAlignVertical.center,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   counterText: '',
