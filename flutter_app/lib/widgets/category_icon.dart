@@ -26,6 +26,8 @@ IconData categoryMaterialIcon(String name) {
       return Icons.coffee_rounded;
     case 'Pet Expenses':
       return Icons.pets_rounded;
+    case 'Income':
+      return Icons.payments_rounded;
     case 'Others':
     default:
       return Icons.category_rounded;

@@ -9,7 +9,12 @@ import 'auth_validation.dart';
 import 'finance_models.dart';
 import 'form_validation.dart';
 import 'responsive.dart';
+import 'screens/biometric_lock_screen.dart';
 import 'screens/email_verification_screen.dart';
+import 'services/biometric_service.dart';
+import 'services/notification_features.dart';
+import 'settings/app_settings.dart';
+import 'settings/settings_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/category_icon.dart';
 import 'widgets/charts.dart';
@@ -817,7 +822,8 @@ class FinanceHomeScreen extends StatefulWidget {
   State<FinanceHomeScreen> createState() => _FinanceHomeScreenState();
 }
 
-class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
+class _FinanceHomeScreenState extends State<FinanceHomeScreen>
+    with WidgetsBindingObserver {
   int _selectedIndex = 0;
   String _transactionQuery = '';
   String _transactionFilter = 'This Month';
@@ -825,7 +831,15 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   AuthUser? _user;
   bool _loggingOut = false;
   bool _loadingFinance = true;
+  AppSettings _settings = const AppSettings();
+  String? _dailyReminderBanner;
+  bool _biometricLocked = false;
+  bool _biometricUnlocking = false;
+  bool _ignoreLifecycleLock = false;
+  String? _biometricError;
   final FinanceRepository _finance = FinanceRepository();
+  final SettingsService _settingsService = SettingsService.instance;
+  final BiometricService _biometric = BiometricService.instance;
   final TextEditingController _budgetCategoryController = TextEditingController(
     text: 'Food',
   );
@@ -836,18 +850,264 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   final List<BudgetModel> _budgets = [];
   final List<GoalModel> _goals = [];
   final Set<String> _readAlertIds = {};
-  final Map<String, bool> _settings = {
-    'Daily expense reminder': true,
-    'Budget threshold alerts': true,
-    'Streak celebrations': true,
-    'Biometric lock': false,
-  };
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUser();
+    _loadSettings();
     _loadFinanceData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _budgetCategoryController.dispose();
+    _budgetLimitController.dispose();
+    _goalTitleController.dispose();
+    _goalTargetController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_ignoreLifecycleLock || !_settings.biometricLock) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      if (!_biometricLocked) {
+        setState(() {
+          _biometricLocked = true;
+          _biometricError = null;
+        });
+      }
+    } else if (state == AppLifecycleState.resumed && _biometricLocked) {
+      _promptBiometricUnlock(auto: true);
+    }
+  }
+
+  List<AlertModel> get _activeAlerts => activeBudgetAlerts(
+        enabled: _settings.budgetThresholdAlerts,
+        txs: _transactions,
+        budgets: _budgets,
+      );
+
+  Future<void> _loadSettings() async {
+    final settings = await _settingsService.load();
+    if (!mounted) return;
+    setState(() {
+      _settings = settings;
+      _biometricLocked = settings.biometricLock;
+    });
+    if (settings.biometricLock) {
+      await _promptBiometricUnlock(auto: true);
+    }
+  }
+
+  Future<void> _updateSetting(String label, bool value) async {
+    if (label == AppSettings.biometricLockLabel) {
+      await _setBiometricLock(value);
+      return;
+    }
+
+    final updated = _settings.withLabel(label, value);
+    setState(() {
+      _settings = updated;
+      if (label == AppSettings.dailyExpenseReminderLabel && !value) {
+        _dailyReminderBanner = null;
+      }
+      if (label == AppSettings.budgetThresholdAlertsLabel && !value) {
+        _readAlertIds.clear();
+      }
+    });
+    await _settingsService.save(updated);
+    if (label == AppSettings.dailyExpenseReminderLabel && value) {
+      await _evaluateDailyExpenseReminder(forceSnack: true);
+    }
+  }
+
+  Future<void> _setBiometricLock(bool enable) async {
+    if (enable) {
+      final available = await _biometric.canAuthenticate();
+      if (!available) {
+        if (!mounted) return;
+        _showMessage(await _biometric.availabilityMessage());
+        return;
+      }
+
+      _ignoreLifecycleLock = true;
+      final result = await _biometric.authenticate(
+        reason: 'Confirm biometrics to enable app lock',
+      );
+      _ignoreLifecycleLock = false;
+
+      if (!mounted) return;
+      if (result != BiometricUnlockResult.success) {
+        if (result == BiometricUnlockResult.unavailable) {
+          _showMessage(await _biometric.availabilityMessage());
+        } else if (result != BiometricUnlockResult.canceled) {
+          _showMessage('Could not verify your identity. Biometric lock stays off.');
+        }
+        return;
+      }
+
+      final updated = _settings.copyWith(biometricLock: true);
+      setState(() {
+        _settings = updated;
+        _biometricLocked = false;
+        _biometricError = null;
+      });
+      await _settingsService.save(updated);
+      if (!mounted) return;
+      _showMessage('Biometric lock enabled. Pockify will lock when you leave the app.');
+      return;
+    }
+
+    _ignoreLifecycleLock = true;
+    final result = await _biometric.authenticate(
+      reason: 'Confirm to turn off biometric lock',
+    );
+    _ignoreLifecycleLock = false;
+    if (!mounted) return;
+
+    if (result != BiometricUnlockResult.success) {
+      if (result != BiometricUnlockResult.canceled) {
+        _showMessage('Could not verify your identity. Biometric lock stays on.');
+      }
+      return;
+    }
+
+    final updated = _settings.copyWith(biometricLock: false);
+    setState(() {
+      _settings = updated;
+      _biometricLocked = false;
+      _biometricError = null;
+    });
+    await _settingsService.save(updated);
+    if (!mounted) return;
+    _showMessage('Biometric lock turned off.');
+  }
+
+  Future<void> _promptBiometricUnlock({bool auto = false}) async {
+    if (!_settings.biometricLock || _biometricUnlocking) return;
+    if (!mounted) return;
+
+    setState(() {
+      _biometricUnlocking = true;
+      _biometricError = null;
+    });
+
+    _ignoreLifecycleLock = true;
+    final result = await _biometric.authenticate(
+      reason: 'Unlock Pockify to view your finances',
+    );
+    _ignoreLifecycleLock = false;
+
+    if (!mounted) return;
+
+    setState(() {
+      _biometricUnlocking = false;
+      if (result == BiometricUnlockResult.success) {
+        _biometricLocked = false;
+        _biometricError = null;
+      } else if (result == BiometricUnlockResult.unavailable) {
+        _biometricError =
+            'Biometrics unavailable. Check device settings, then try again.';
+      } else if (result == BiometricUnlockResult.failed && !auto) {
+        _biometricError = 'Authentication failed. Try again.';
+      } else if (result == BiometricUnlockResult.canceled && !auto) {
+        _biometricError = 'Unlock canceled.';
+      }
+    });
+  }
+
+  Future<void> _evaluateDailyExpenseReminder({bool forceSnack = false}) async {
+    if (!_settings.dailyExpenseReminder) {
+      if (mounted) setState(() => _dailyReminderBanner = null);
+      return;
+    }
+
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final lastShown = await _settingsService.lastDailyReminderShownDate();
+    final needsReminder = !hasExpenseLoggedToday(_transactions);
+
+    if (!mounted) return;
+
+    if (!needsReminder) {
+      setState(() => _dailyReminderBanner = null);
+      return;
+    }
+
+    setState(() {
+      _dailyReminderBanner =
+          'You haven\'t logged any expenses today. Tap + to keep your streak and budgets accurate.';
+    });
+
+    final message = dailyExpenseReminderMessage(
+      enabled: true,
+      txs: _transactions,
+      lastShownIsoDate: forceSnack ? null : lastShown,
+    );
+    if (message == null) return;
+
+    await _settingsService.markDailyReminderShown(today);
+    if (!mounted) return;
+    _showMessage(message);
+  }
+
+  Future<void> _checkBudgetThresholdAlerts() async {
+    if (!_settings.budgetThresholdAlerts) return;
+
+    final notified = await _settingsService.notifiedAlertIds();
+    final fresh = newBudgetThresholdAlerts(
+      enabled: true,
+      txs: _transactions,
+      budgets: _budgets,
+      alreadyNotifiedIds: notified,
+    );
+    if (fresh.isEmpty) return;
+
+    await _settingsService.markAlertsNotified(fresh.map((a) => a.id));
+    if (!mounted) return;
+    final alert = fresh.first;
+    _showMessage('${alert.title}: ${alert.body}');
+  }
+
+  Future<void> _checkStreakCelebrations() async {
+    if (!_settings.streakCelebrations) return;
+
+    final streak = essentialStreak(_transactions);
+    final celebrated = await _settingsService.celebratedStreakMilestones();
+    final pending = pendingStreakCelebrations(
+      enabled: true,
+      streak: streak,
+      alreadyCelebrated: celebrated,
+    );
+    if (pending.isEmpty || !mounted) return;
+
+    final milestone = pending.last;
+    await _settingsService.markStreakMilestoneCelebrated(milestone);
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${streakMilestoneTitle(milestone)} unlocked!'),
+        content: Text(
+          'You kept an essentials-only streak for $milestone days. '
+          'Great discipline — keep logging thoughtfully.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF7F20),
+            ),
+            child: const Text('Nice!'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadUser() async {
@@ -870,6 +1130,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           ..addAll(SEED_GOALS);
         _loadingFinance = false;
       });
+      await _evaluateDailyExpenseReminder();
       return;
     }
 
@@ -892,6 +1153,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
           ..addAll(results[2] as List<GoalModel>);
         _loadingFinance = false;
       });
+      await _evaluateDailyExpenseReminder();
     } catch (error) {
       if (!mounted) return;
       setState(() => _loadingFinance = false);
@@ -955,15 +1217,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _budgetCategoryController.dispose();
-    _budgetLimitController.dispose();
-    _goalTitleController.dispose();
-    _goalTargetController.dispose();
-    super.dispose();
-  }
-
   String _pageTitle() {
     switch (_selectedIndex) {
       case 0:
@@ -983,9 +1236,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
 
   Future<void> _addTransaction(TransactionModel tx) async {
     setState(() => _transactions.insert(0, tx));
-    if (!ApiConfig.useSupabase) return;
+    if (tx.kind == TxKind.expense) {
+      setState(() => _dailyReminderBanner = null);
+    }
+    if (!ApiConfig.useSupabase) {
+      await _checkBudgetThresholdAlerts();
+      await _checkStreakCelebrations();
+      return;
+    }
     try {
       await _finance.upsertTransaction(tx);
+      await _checkBudgetThresholdAlerts();
+      await _checkStreakCelebrations();
     } catch (error) {
       if (!mounted) return;
       setState(() => _transactions.removeWhere((item) => item.id == tx.id));
@@ -1154,7 +1416,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   }
 
   void _showNotifications(BuildContext buttonContext) {
-    final alerts = budgetAlerts(_transactions, _budgets);
+    final alerts = _activeAlerts;
     final box = buttonContext.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
 
@@ -1240,11 +1502,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                             ),
                             const SizedBox(height: 10),
                             if (alerts.isEmpty)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
-                                  'No budget alerts right now. You\'re all clear.',
-                                  style: TextStyle(
+                                  !_settings.budgetThresholdAlerts
+                                      ? 'Budget threshold alerts are turned off in Profile settings.'
+                                      : 'No budget alerts right now. You\'re all clear.',
+                                  style: const TextStyle(
                                     color: Colors.grey,
                                     fontSize: 13,
                                   ),
@@ -1449,17 +1713,24 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                                 child: _quickTypeButton(
                                   'Expense',
                                   kind == TxKind.expense,
-                                  () => setSheetState(
-                                    () => kind = TxKind.expense,
-                                  ),
+                                  () => setSheetState(() {
+                                    kind = TxKind.expense;
+                                    if (category == 'Income' ||
+                                        category.isEmpty) {
+                                      category = 'Food';
+                                    }
+                                  }),
                                 ),
                               ),
                               Expanded(
                                 child: _quickTypeButton(
                                   'Income',
                                   kind == TxKind.income,
-                                  () =>
-                                      setSheetState(() => kind = TxKind.income),
+                                  () => setSheetState(() {
+                                    kind = TxKind.income;
+                                    // Income has no expense category.
+                                    category = 'Income';
+                                  }),
                                 ),
                               ),
                             ],
@@ -1482,57 +1753,59 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            ActionChip(
-                              avatar: const Icon(
-                                Icons.star,
-                                size: 14,
-                                color: Colors.amber,
-                              ),
-                              label: const Text('Bus fare · ₱80'),
-                              onPressed: () {
-                                amountController.text = '80';
-                                noteController.text = 'Bus fare';
-                              },
-                            ),
-                            ActionChip(
-                              avatar: const Icon(
-                                Icons.star,
-                                size: 14,
-                                color: Colors.amber,
-                              ),
-                              label: const Text('Rice bowl · ₱120'),
-                              onPressed: () {
-                                amountController.text = '120';
-                                noteController.text = 'Rice bowl';
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: categories
-                              .map(
-                                (item) => ChoiceChip(
-                                  label: Text(item),
-                                  selected: category == item,
-                                  selectedColor: const Color(0xFFFF7F20),
-                                  labelStyle: TextStyle(
-                                    color: category == item
-                                        ? Colors.white
-                                        : Colors.grey.shade700,
-                                  ),
-                                  onSelected: (_) =>
-                                      setSheetState(() => category = item),
+                        if (kind == TxKind.expense) ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              ActionChip(
+                                avatar: const Icon(
+                                  Icons.star,
+                                  size: 14,
+                                  color: Colors.amber,
                                 ),
-                              )
-                              .toList(),
-                        ),
+                                label: const Text('Bus fare · ₱80'),
+                                onPressed: () {
+                                  amountController.text = '80';
+                                  noteController.text = 'Bus fare';
+                                },
+                              ),
+                              ActionChip(
+                                avatar: const Icon(
+                                  Icons.star,
+                                  size: 14,
+                                  color: Colors.amber,
+                                ),
+                                label: const Text('Rice bowl · ₱120'),
+                                onPressed: () {
+                                  amountController.text = '120';
+                                  noteController.text = 'Rice bowl';
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: categories
+                                .map(
+                                  (item) => ChoiceChip(
+                                    label: Text(item),
+                                    selected: category == item,
+                                    selectedColor: const Color(0xFFFF7F20),
+                                    labelStyle: TextStyle(
+                                      color: category == item
+                                          ? Colors.white
+                                          : Colors.grey.shade700,
+                                    ),
+                                    onSelected: (_) =>
+                                        setSheetState(() => category = item),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -1592,7 +1865,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                                 buildTransaction(
                                   kind: kind,
                                   amountText: amountController.text,
-                                  category: category,
+                                  category: kind == TxKind.income
+                                      ? 'Income'
+                                      : category,
                                   dateText: dateController.text,
                                   note: noteController.text,
                                 ),
@@ -1600,7 +1875,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                               Navigator.of(context).pop();
                             },
                             icon: const Icon(Icons.add),
-                            label: const Text('Save expense'),
+                            label: Text(
+                              kind == TxKind.income
+                                  ? 'Save income'
+                                  : 'Save expense',
+                            ),
                           ),
                         ),
                       ],
@@ -1618,7 +1897,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   Widget _dashboardView() {
     final totals = monthlyTotals(_transactions);
     final score = healthScore(_transactions, _budgets);
-    final alerts = budgetAlerts(_transactions, _budgets);
+    final alerts = _activeAlerts;
     final recent = [..._transactions]..sort((a, b) => b.date.compareTo(a.date));
     final spent = spentByCategory(_transactions);
     final budgetTotal = _budgets.fold<double>(
@@ -1635,6 +1914,42 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     return ListView(
       padding: _pagePadding(context),
       children: [
+        if (_dailyReminderBanner != null) ...[
+          Material(
+            color: const Color(0xFFFFF3E0),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.notifications_active_rounded,
+                    color: Color(0xFFFF7F20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _dailyReminderBanner!,
+                      style: const TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Dismiss',
+                    onPressed: () async {
+                      final today =
+                          DateTime.now().toIso8601String().substring(0, 10);
+                      await _settingsService.markDailyReminderShown(today);
+                      if (!mounted) return;
+                      setState(() => _dailyReminderBanner = null);
+                    },
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Card(
           elevation: 0,
           color: const Color(0xFFECFDF5),
@@ -2796,11 +3111,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
   Widget _profileView() {
     final favorites = _transactions.where((tx) => tx.favorite).toList();
     final score = healthScore(_transactions, _budgets);
+    final streak = essentialStreak(_transactions);
+    final alerts = _activeAlerts;
     final healthLabel = score >= 75
         ? 'Excellent'
         : score >= 60
-        ? 'Good'
-        : 'Needs attention';
+            ? 'Good'
+            : 'Needs attention';
     final email = _user?.email ?? '';
     final currency = _user?.currency;
     final employment = _user?.employmentStatus;
@@ -2866,17 +3183,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: _loggingOut ? null : _confirmLogout,
-                  tooltip: 'Sign out',
-                  icon: _loggingOut
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.logout_rounded, color: Colors.grey),
-                ),
               ],
             ),
           ),
@@ -2935,34 +3241,37 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                   ],
                 ),
                 Text(
-                  'Essential Spending Streak: ${essentialStreak(_transactions)} days',
+                  'Essential Spending Streak: $streak days',
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: const [
+                  children: [
                     _AchievementTile(
                       icon: Icons.eco_rounded,
                       title: 'Smart Starter',
                       subtitle: '3-day streak',
-                      unlocked: true,
+                      unlocked: isStreakAchievementUnlocked(streak, 3),
                     ),
                     _AchievementTile(
                       icon: Icons.shield_rounded,
                       title: 'Budget Keeper',
                       subtitle: '7-day streak',
+                      unlocked: isStreakAchievementUnlocked(streak, 7),
                     ),
                     _AchievementTile(
                       icon: Icons.psychology_rounded,
                       title: 'Wise Spender',
                       subtitle: '14-day streak',
+                      unlocked: isStreakAchievementUnlocked(streak, 14),
                     ),
                     _AchievementTile(
                       icon: Icons.workspace_premium_rounded,
                       title: 'Financial Master',
                       subtitle: '30-day streak',
+                      unlocked: isStreakAchievementUnlocked(streak, 30),
                     ),
                   ],
                 ),
@@ -3000,9 +3309,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: Text(
-                    budgetAlerts(_transactions, _budgets).isEmpty
-                        ? 'Your budgets are on track.'
-                        : budgetAlerts(_transactions, _budgets).first.body,
+                    !_settings.budgetThresholdAlerts
+                        ? 'Budget threshold alerts are turned off.'
+                        : alerts.isEmpty
+                            ? 'Your budgets are on track.'
+                            : alerts.first.body,
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -3013,29 +3324,41 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
         const SizedBox(height: 16),
         Card(
           child: Column(
-            children:
-                [
-                      'Daily expense reminder',
-                      'Budget threshold alerts',
-                      'Streak celebrations',
-                      'Biometric lock',
-                    ]
-                    .map(
-                      (label) => SwitchListTile(
-                        title: Text(
-                          label,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        value: _settings[label] ?? false,
-                        onChanged: (value) =>
-                            setState(() => _settings[label] = value),
-                      ),
-                    )
-                    .toList(),
+            children: AppSettings.labels
+                .map(
+                  (label) => SwitchListTile(
+                    title: Text(
+                      label,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      _settingSubtitle(label),
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    value: _settings.valueFor(label),
+                    onChanged: (value) => _updateSetting(label, value),
+                  ),
+                )
+                .toList(),
           ),
         ),
       ],
     );
+  }
+
+  String _settingSubtitle(String label) {
+    switch (label) {
+      case AppSettings.dailyExpenseReminderLabel:
+        return 'Banner + once-a-day nudge if no expense is logged';
+      case AppSettings.budgetThresholdAlertsLabel:
+        return 'Warn at 80% and when a budget is exceeded';
+      case AppSettings.streakCelebrationsLabel:
+        return 'Celebrate 3 / 7 / 14 / 30-day essentials streaks';
+      case AppSettings.biometricLockLabel:
+        return 'Lock Pockify with fingerprint, Face ID, or device PIN';
+      default:
+        return '';
+    }
   }
 
   EdgeInsets _pagePadding(BuildContext context) =>
@@ -3296,6 +3619,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_settings.biometricLock && _biometricLocked) {
+      return BiometricLockScreen(
+        unlocking: _biometricUnlocking,
+        errorMessage: _biometricError,
+        onUnlock: () => _promptBiometricUnlock(),
+      );
+    }
+
     if (_loadingFinance) {
       return const Scaffold(
         body: Center(
@@ -3313,7 +3644,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen> {
     ];
 
     final alertCount = unreadAlertCount(
-      budgetAlerts(_transactions, _budgets),
+      _activeAlerts,
       _readAlertIds,
     );
     final useSideNav = Responsive.useSideNav(context);
