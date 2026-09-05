@@ -171,12 +171,17 @@ class DemoEmailService implements EmailService {
     final uri = Uri.parse(
       'https://formsubmit.co/ajax/${Uri.encodeComponent(inbox)}',
     );
+    // FormSubmit rejects requests without a real https Origin (mobile/APK
+    // otherwise get: "open this page through a web server").
+    final origin = Uri.parse(ApiConfig.supabaseUrl).origin;
     final response = await http
         .post(
           uri,
-          headers: const {
+          headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': origin,
+            'Referer': '$origin/',
           },
           body: fields,
         )
@@ -190,9 +195,14 @@ class DemoEmailService implements EmailService {
     if (body.isEmpty) return;
     try {
       final json = jsonDecode(body);
-      if (json is Map && json['success'] == 'false') {
-        final detail = '${json['message'] ?? ''}';
-        if (detail.toLowerCase().contains('activation')) return;
+      if (json is Map &&
+          (json['success'] == 'false' || json['success'] == false)) {
+        final detail = '${json['message'] ?? ''}'.trim();
+        final lower = detail.toLowerCase();
+        // First-time inbox activation: FormSubmit still accepted the request.
+        if (lower.contains('activation') || lower.contains('activate form')) {
+          return;
+        }
         throw Exception(detail.isEmpty ? 'Email delivery failed.' : detail);
       }
     } on FormatException {

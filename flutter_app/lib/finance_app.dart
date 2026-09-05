@@ -10,6 +10,7 @@ import 'finance_models.dart';
 import 'form_validation.dart';
 import 'responsive.dart';
 import 'screens/biometric_lock_screen.dart';
+import 'screens/edit_profile_screen.dart';
 import 'screens/email_verification_screen.dart';
 import 'services/biometric_service.dart';
 import 'services/notification_features.dart';
@@ -18,6 +19,7 @@ import 'settings/settings_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/category_icon.dart';
 import 'widgets/charts.dart';
+import 'widgets/profile_avatar.dart';
 
 class FinanceApp extends StatefulWidget {
   const FinanceApp({super.key});
@@ -268,6 +270,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
         await _showErrorDialog(
           authResult.message ?? 'Sign up failed. Please try again.',
+          title: 'Sign up',
         );
         return;
       }
@@ -288,6 +291,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
       await _showErrorDialog(
         authResult.message ?? 'Sign in failed. Please try again.',
+        title: 'Sign in',
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1111,9 +1115,32 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   }
 
   Future<void> _loadUser() async {
+    if (ApiConfig.useSupabase) {
+      final result = await AuthService.instance.restoreSession();
+      if (!mounted) return;
+      if (result != null) {
+        setState(() => _user = result);
+        return;
+      }
+    }
     final user = await AuthService.instance.currentUser();
     if (!mounted) return;
     setState(() => _user = user);
+  }
+
+  Future<void> _openEditProfile() async {
+    final user = _user;
+    if (user == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => EditProfileScreen(
+          user: user,
+          onSaved: (updated) {
+            setState(() => _user = updated);
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _loadFinanceData() async {
@@ -3131,17 +3158,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
             padding: const EdgeInsets.all(20),
             child: Row(
               children: [
-                CircleAvatar(
+                ProfileAvatar(
+                  name: _displayName,
+                  avatarUrl: _user?.avatarUrl,
                   radius: 28,
-                  backgroundColor: const Color(0xFFF39A42),
-                  child: Text(
-                    _initial,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -3183,23 +3203,12 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     ],
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Edit profile',
+                  onPressed: _user == null ? null : _openEditProfile,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
               ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _loggingOut ? null : _confirmLogout,
-            icon: const Icon(Icons.logout_rounded, size: 18),
-            label: Text(_loggingOut ? 'Signing out...' : 'Sign out'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF5C564C),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
             ),
           ),
         ),
@@ -3340,6 +3349,22 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   ),
                 )
                 .toList(),
+          ),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _loggingOut ? null : _confirmLogout,
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: Text(_loggingOut ? 'Signing out...' : 'Sign out'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF5C564C),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
         ),
       ],

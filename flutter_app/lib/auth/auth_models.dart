@@ -10,6 +10,7 @@ class AuthUser {
   final DateTime? birthDate;
   final double? monthlyIncome;
   final double? monthlyBudgetGoal;
+  final String? avatarUrl;
   final DateTime createdAt;
 
   const AuthUser({
@@ -24,6 +25,7 @@ class AuthUser {
     this.birthDate,
     this.monthlyIncome,
     this.monthlyBudgetGoal,
+    this.avatarUrl,
     required this.createdAt,
   });
 
@@ -38,6 +40,8 @@ class AuthUser {
     DateTime? birthDate,
     double? monthlyIncome,
     double? monthlyBudgetGoal,
+    String? avatarUrl,
+    bool clearAvatar = false,
   }) {
     return AuthUser(
       id: id,
@@ -51,6 +55,7 @@ class AuthUser {
       birthDate: birthDate ?? this.birthDate,
       monthlyIncome: monthlyIncome ?? this.monthlyIncome,
       monthlyBudgetGoal: monthlyBudgetGoal ?? this.monthlyBudgetGoal,
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
       createdAt: createdAt,
     );
   }
@@ -67,6 +72,7 @@ class AuthUser {
     'birthDate': birthDate?.toIso8601String(),
     'monthlyIncome': monthlyIncome,
     'monthlyBudgetGoal': monthlyBudgetGoal,
+    'avatarUrl': avatarUrl,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -84,6 +90,7 @@ class AuthUser {
         : DateTime.tryParse(json['birthDate'] as String),
     monthlyIncome: (json['monthlyIncome'] as num?)?.toDouble(),
     monthlyBudgetGoal: (json['monthlyBudgetGoal'] as num?)?.toDouble(),
+    avatarUrl: json['avatarUrl'] as String?,
     createdAt: DateTime.parse(
       json['createdAt'] as String? ?? DateTime.now().toIso8601String(),
     ),
@@ -103,6 +110,7 @@ class AuthUser {
         : DateTime.tryParse('${json['birth_date']}'),
     monthlyIncome: (json['monthly_income'] as num?)?.toDouble(),
     monthlyBudgetGoal: (json['monthly_budget_goal'] as num?)?.toDouble(),
+    avatarUrl: json['avatar_url'] as String?,
     createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
         DateTime.now(),
   );

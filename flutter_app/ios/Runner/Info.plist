@@ -68,5 +68,22 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Pockify uses Face ID to protect your finance data when biometric lock is enabled.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pockify needs photo access so you can set a profile picture.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pockify needs camera access so you can take a profile picture.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.supabase.pockify</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>io.supabase.pockify.oauth</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import '../api/api_config.dart';
 import '../api/laravel_auth_client.dart';
+import '../api/profile_repository.dart';
 import '../api/supabase_auth_client.dart';
 import 'auth_models.dart';
 import 'auth_repository.dart';
@@ -336,6 +339,70 @@ class AuthService {
     return result;
   }
 
+  /// Updates profile fields and optional avatar image bytes.
+  /// Avatar is uploaded to Storage when possible, and [profiles.avatar_url]
+  /// is always written in the database.
+  Future<AuthResult> updateProfile({
+    required String name,
+    String? currency,
+    String? employmentStatus,
+    DateTime? birthDate,
+    double? monthlyIncome,
+    double? monthlyBudgetGoal,
+    Uint8List? avatarBytes,
+    String avatarContentType = 'image/jpeg',
+  }) async {
+    // Prefer live Supabase user so id matches auth.uid() for RLS + Storage.
+    AuthUser? current;
+    if (_useSupabase) {
+      final remote = await _supabase.me();
+      if (remote.ok && remote.user != null) {
+        current = remote.user;
+        await _repository.upsertUser(current!);
+      }
+    }
+    current ??= await currentUser();
+
+    if (current == null) {
+      return AuthResult.failure(
+        AuthFailureCode.emailNotFound,
+        'You need to sign in again to edit your profile.',
+      );
+    }
+
+    try {
+      final profiles = ProfileRepository();
+      var avatarUrl = current.avatarUrl;
+      if (avatarBytes != null && avatarBytes.isNotEmpty) {
+        avatarUrl = await profiles.uploadAvatar(
+          userId: current.id,
+          bytes: avatarBytes,
+          contentType: avatarContentType,
+        );
+      }
+
+      final updated = await profiles.updateProfile(
+        user: current,
+        name: name,
+        currency: currency,
+        employmentStatus: employmentStatus,
+        birthDate: birthDate,
+        monthlyIncome: monthlyIncome,
+        monthlyBudgetGoal: monthlyBudgetGoal,
+        avatarUrl: avatarUrl,
+      );
+
+      await _repository.upsertUser(updated);
+      await _repository.setSessionEmail(updated.email);
+      return AuthResult.success(updated);
+    } catch (error) {
+      return AuthResult.failure(
+        AuthFailureCode.invalidCredentials,
+        'Could not save profile. $error',
+      );
+    }
+  }
+
   Future<AuthResult> _startEmailCodeSignup({
     required String name,
     required String email,
@@ -630,9 +697,10 @@ class AuthService {
         expiresIn: otpTtl,
       );
     } catch (error) {
+      final detail = '$error'.replaceFirst(RegExp(r'^Exception:\s*'), '');
       return AuthResult.failure(
         AuthFailureCode.invalidCredentials,
-        'Could not send a 6-digit code to ${user.email}. Check your connection and try again.',
+        'Could not email a 6-digit code to ${user.email}. $detail',
       );
     }
 

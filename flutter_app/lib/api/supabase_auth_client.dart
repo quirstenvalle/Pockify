@@ -12,7 +12,9 @@ import 'api_config.dart';
 class SupabaseAuthClient {
   SupabaseClient get _client => Supabase.instance.client;
 
-  String? get _emailRedirectTo => kIsWeb ? Uri.base.origin : null;
+  /// Web uses the current origin; mobile uses the app deep-link scheme.
+  String get _authRedirectTo =>
+      kIsWeb ? Uri.base.origin : ApiConfig.oauthRedirectUrl;
 
   Future<pockify.AuthResult> register({
     required String name,
@@ -188,7 +190,7 @@ class SupabaseAuthClient {
 
       final launched = await _client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: _emailRedirectTo,
+        redirectTo: _authRedirectTo,
         authScreenLaunchMode: kIsWeb
             ? LaunchMode.platformDefault
             : LaunchMode.externalApplication,
@@ -398,7 +400,8 @@ class SupabaseAuthClient {
         );
       }
 
-      final mapped = await _userWithProfile(user);
+      // Ensure Google (and other) sign-ins always have a profiles row.
+      final mapped = await _ensureProfileStored(user);
       return pockify.AuthResult.success(mapped, token: session.accessToken);
     } on AuthException catch (error) {
       return _mapAuthException(error);
@@ -414,6 +417,14 @@ class SupabaseAuthClient {
     try {
       await _client.auth.signOut();
     } catch (_) {}
+  }
+
+  /// Loads profile and upserts into public.profiles (creates Google users too).
+  Future<pockify.AuthUser> _ensureProfileStored(User user) async {
+    final mapped = await _userWithProfile(user);
+    await _upsertProfile(mapped);
+    // Re-read so we pick up DB defaults / trigger values.
+    return _userWithProfile(user);
   }
 
   Future<pockify.AuthUser> _userWithProfile(User user) async {
@@ -444,6 +455,7 @@ class SupabaseAuthClient {
                 '${user.birthDate!.day.toString().padLeft(2, '0')}',
         'monthly_income': user.monthlyIncome,
         'monthly_budget_goal': user.monthlyBudgetGoal,
+        'avatar_url': user.avatarUrl,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
@@ -469,6 +481,17 @@ class SupabaseAuthClient {
       return double.tryParse('$value');
     }
 
+    final profileAvatar = (profile?['avatar_url'] as String?)?.trim();
+    final metaAvatar = (meta['avatar_url'] as String?)?.trim();
+    final googlePicture = (meta['picture'] as String?)?.trim();
+    final avatarUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
+        ? profileAvatar
+        : (metaAvatar != null && metaAvatar.isNotEmpty)
+            ? metaAvatar
+            : (googlePicture != null && googlePicture.isNotEmpty)
+                ? googlePicture
+                : null;
+
     return pockify.AuthUser(
       id: user.id,
       name: name,
@@ -486,6 +509,7 @@ class SupabaseAuthClient {
           asDouble(meta['monthly_income']),
       monthlyBudgetGoal: asDouble(profile?['monthly_budget_goal']) ??
           asDouble(meta['monthly_budget_goal']),
+      avatarUrl: avatarUrl,
       createdAt: DateTime.tryParse(user.createdAt) ?? DateTime.now(),
     );
   }

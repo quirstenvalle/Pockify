@@ -28,6 +28,21 @@ class ApiConfig {
     defaultValue: 'sb_publishable_MVCsStwZSCVYoz6phKNKNw_3ZsYr5oG',
   );
 
+  /// Deep-link used after Google OAuth / email links on Android & iOS.
+  /// Must also be listed under Supabase → Authentication → URL Configuration
+  /// (Site URL and/or Redirect URLs). Prefer setting Site URL to this value
+  /// for mobile so OAuth cannot fall back to localhost.
+  static const String oauthRedirectUrl = String.fromEnvironment(
+    'POCKIFY_OAUTH_REDIRECT',
+    defaultValue: 'io.supabase.pockify://login-callback/',
+  );
+
+  /// Scheme portion of [oauthRedirectUrl] for flutter_web_auth_2.
+  static const String oauthCallbackScheme = String.fromEnvironment(
+    'POCKIFY_OAUTH_SCHEME',
+    defaultValue: 'io.supabase.pockify',
+  );
+
   /// Shared FormSubmit inbox (already activated for the team).
   /// Signup OTPs are sent here and CC'd to whatever email the user typed.
   /// Do not change this unless the team activates a new FormSubmit inbox.
