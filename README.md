@@ -2,6 +2,44 @@
 
 Pockify – Smart Expense Tracker
 
+## How to run (co-dev)
+
+This repo has two apps. The product you sign in to is **Flutter**.
+
+### Flutter app
+
+1. Install the [Flutter SDK](https://docs.flutter.dev/get-started/install) and keep `flutter` on your PATH.
+2. From the repo root:
+
+```bash
+cd flutter_app
+flutter pub get
+flutter run -d edge    # Windows
+flutter run -d chrome  # macOS / Linux
+```
+
+Or in Cursor/VS Code: Run and Debug → **Pockify Flutter (Edge)** or **Pockify Flutter (Chrome)**.
+
+Windows shortcut: `scripts/run-flutter.ps1`
+
+Google sign-in and email OTP already point at the shared Supabase project in `flutter_app/lib/api/api_config.dart`. No local secrets file is required.
+
+If Google returns to a blank login screen, add these Redirect URLs in Supabase (**Authentication → URL Configuration**):
+
+- `http://localhost:*`
+- `http://127.0.0.1:*`
+
+Email OTP goes to the address used at signup (including Gmail). Check Inbox, Promotions, and Spam.
+
+### Lovable web app (repo root)
+
+```bash
+npm install
+npm run dev
+```
+
+---
+
 Detailed and Structured Application Overview
 
     Application Overview
@@ -684,6 +722,13 @@ cd <repository-name>
 npm i
 npm run dev
 ```
-#   P o c k i f y  
- #   P o c k i f y  
- 
+
+## Flutter app
+
+The Flutter app lives in `flutter_app`. From the repo root:
+
+```sh
+cd flutter_app
+flutter pub get
+flutter run
+```

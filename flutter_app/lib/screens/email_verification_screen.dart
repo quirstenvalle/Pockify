@@ -13,10 +13,12 @@ class EmailVerificationScreen extends StatefulWidget {
     required this.email,
     required this.onVerified,
     required this.onBackToAuth,
+    this.password,
     this.initialDemoCode,
   });
 
   final String email;
+  final String? password;
   final VoidCallback onVerified;
   final VoidCallback onBackToAuth;
   final String? initialDemoCode;
@@ -35,30 +37,36 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   String _otp = '';
   String? _statusMessage;
   String? _errorMessage;
-  String? _demoCode;
   bool _busy = false;
   bool _editingEmail = false;
   bool _success = false;
   Duration _remaining = AuthService.otpTtl;
   Timer? _ticker;
+  void Function()? _cancelWatch;
 
   @override
   void initState() {
     super.initState();
     _email = widget.email.trim().toLowerCase();
     _emailEditController.text = _email;
-    _demoCode = widget.initialDemoCode;
     _statusMessage =
-        "We've sent a verification code to $_email. Enter it below to finish signing up.";
+        "We've emailed a 6-digit code to $_email. Open that inbox (and Spam), then type the code here.";
     _startTicker();
     _refreshRemaining();
+    _cancelWatch = _auth.watchRemoteVerification(_onRemoteVerified);
   }
 
   @override
   void dispose() {
+    _cancelWatch?.call();
     _ticker?.cancel();
     _emailEditController.dispose();
     super.dispose();
+  }
+
+  void _onRemoteVerified() {
+    if (!mounted || _success) return;
+    widget.onVerified();
   }
 
   void _startTicker() {
@@ -104,7 +112,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         _success = true;
         _statusMessage = 'Email verified successfully.';
         _errorMessage = null;
-        _demoCode = null;
       });
 
       await showGeneralDialog<void>(
@@ -228,9 +235,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       if (result.failureCode == AuthFailureCode.resendCooldown) {
         _errorMessage = result.message;
       } else if (result.ok || result.requiresVerification) {
-        _statusMessage = "We've sent a new verification code to your email.";
+        _statusMessage =
+            "We've emailed a new 6-digit code to $_email. Open that inbox, then type it here.";
         _errorMessage = null;
-        _demoCode = result.demoCode;
           _otpKey.currentState?.clear();
           _otp = '';
         _remaining = AuthService.otpTtl;
@@ -239,6 +246,36 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       }
     });
     await _refreshRemaining();
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_busy || _success) return;
+    setState(() {
+      _busy = true;
+      _errorMessage = null;
+      _statusMessage = null;
+    });
+
+    final result = await _auth.signInWithGoogle();
+    if (!mounted) return;
+
+    if (result.ok && result.user != null) {
+      setState(() {
+        _busy = false;
+        _success = true;
+      });
+      widget.onVerified();
+      return;
+    }
+
+    if (result.redirecting) {
+      return;
+    }
+
+    setState(() {
+      _busy = false;
+      _errorMessage = result.message ?? 'Google sign-in failed. Please try again.';
+    });
   }
 
   Future<void> _saveEmailChange() async {
@@ -264,8 +301,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       if (result.requiresVerification || result.ok) {
         _email = next;
         _editingEmail = false;
-        _statusMessage = "We've sent a verification code to your email address.";
-        _demoCode = result.demoCode;
+        _statusMessage =
+            "We've emailed a 6-digit code to $_email. Open that inbox (and Spam), then type the code here.";
           _otpKey.currentState?.clear();
           _otp = '';
         _remaining = AuthService.otpTtl;
@@ -334,7 +371,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                           const SizedBox(height: 8),
                           Text(
                             _statusMessage ??
-                                "We've sent a verification code to your email address.",
+                                "We've emailed a 6-digit code to $_email. Open that inbox (and Spam), then type the code here.",
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 12,
@@ -466,14 +503,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                               tone: _BannerTone.success,
                             ),
                           ],
-                          if (_demoCode != null && !_success) ...[
-                            const SizedBox(height: 12),
-                            _Banner(
-                              text:
-                                  'Demo inbox (no SMTP configured): your code is $_demoCode',
-                              tone: _BannerTone.info,
-                            ),
-                          ],
                           const SizedBox(height: 18),
                           FilledButton(
                             onPressed: _busy ||
@@ -503,6 +532,34 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                           OutlinedButton(
                             onPressed: _busy || _success ? null : _resend,
                             child: const Text('Resend Code'),
+                          ),
+                          const SizedBox(height: 16),
+                          const Row(
+                            children: [
+                              Expanded(child: Divider()),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 10),
+                                child: Text(
+                                  'or',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                              Expanded(child: Divider()),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: _busy || _success
+                                ? null
+                                : _signInWithGoogle,
+                            icon: const Icon(Icons.g_mobiledata, size: 22),
+                            label: const Text(
+                              'Continue with Google',
+                              style: TextStyle(fontSize: 11),
+                            ),
                           ),
                         ],
                       ),
