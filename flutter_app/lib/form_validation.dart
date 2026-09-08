@@ -4,7 +4,9 @@ import 'finance_models.dart';
 ValidationResult validateAmount(String raw) {
   final amount = double.tryParse(raw.trim());
   if (amount == null || amount <= 0) {
-    return const ValidationResult.invalid('Enter a valid amount greater than 0.');
+    return const ValidationResult.invalid(
+      'Enter a valid amount greater than 0.',
+    );
   }
   return const ValidationResult.valid();
 }
@@ -32,19 +34,18 @@ ValidationResult validateGoalInput({
 BudgetModel buildBudget({
   required String category,
   required String limitText,
+  required String date,
 }) {
   final limit = double.parse(limitText.trim());
   return BudgetModel(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
     category: category.trim(),
     limit: limit,
+    date: date,
   );
 }
 
-GoalModel buildGoal({
-  required String title,
-  required String targetText,
-}) {
+GoalModel buildGoal({required String title, required String targetText}) {
   final target = double.parse(targetText.trim());
   return GoalModel(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -111,7 +112,7 @@ List<TransactionModel> filterTransactions(
     ..sort((a, b) => b.date.compareTo(a.date));
 }
 
-GoalModel contributeToGoal(GoalModel goal, {double amount = 500}) {
+GoalModel contributeToGoal(GoalModel goal, {required double amount}) {
   return GoalModel(
     id: goal.id,
     title: goal.title,

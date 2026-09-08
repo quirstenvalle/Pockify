@@ -35,6 +35,8 @@ class _FinanceAppState extends State<FinanceApp> {
   String? _pendingDemoCode;
   String? _pendingPassword;
   void Function()? _cancelAuthWatch;
+  void Function()? _cancelRecoveryWatch;
+  bool _passwordRecovery = false;
 
   @override
   void initState() {
@@ -42,12 +44,17 @@ class _FinanceAppState extends State<FinanceApp> {
     _cancelAuthWatch = AuthService.instance.watchRemoteVerification(
       _onRemoteAuthenticated,
     );
+    _cancelRecoveryWatch = AuthService.instance.watchPasswordRecovery(() {
+      if (!mounted) return;
+      setState(() => _passwordRecovery = true);
+    });
     _restoreSession();
   }
 
   @override
   void dispose() {
     _cancelAuthWatch?.call();
+    _cancelRecoveryWatch?.call();
     super.dispose();
   }
 
@@ -95,6 +102,13 @@ class _FinanceAppState extends State<FinanceApp> {
                 child: CircularProgressIndicator(color: Color(0xFFFF7F20)),
               ),
             )
+          : _passwordRecovery
+          ? PasswordResetScreen(
+              onCompleted: () => setState(() {
+                _passwordRecovery = false;
+                _authenticated = true;
+              }),
+            )
           : _authenticated
           ? FinanceHomeScreen(onLogout: _handleLogout)
           : _pendingVerificationEmail != null
@@ -126,6 +140,112 @@ class _FinanceAppState extends State<FinanceApp> {
   }
 }
 
+class PasswordResetScreen extends StatefulWidget {
+  const PasswordResetScreen({super.key, required this.onCompleted});
+
+  final VoidCallback onCompleted;
+
+  @override
+  State<PasswordResetScreen> createState() => _PasswordResetScreenState();
+}
+
+class _PasswordResetScreenState extends State<PasswordResetScreen> {
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final password = _passwordController.text;
+    final validation = validatePassword(password);
+    if (!validation.ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(validation.message ?? 'Enter a valid password.'),
+        ),
+      );
+      return;
+    }
+    if (password != _confirmController.text) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Passwords do not match.')));
+      return;
+    }
+
+    setState(() => _busy = true);
+    final error = await AuthService.instance.updatePassword(password);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    widget.onCompleted();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Create a new password',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Choose a new password for your Pockify account.'),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'New password',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _confirmController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm password',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: Text(_busy ? 'Updating...' : 'Update password'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
     super.key,
@@ -135,7 +255,7 @@ class AuthScreen extends StatefulWidget {
 
   final VoidCallback onAuthenticated;
   final void Function(String email, String? demoCode, String password)
-      onNeedsVerification;
+  onNeedsVerification;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -185,9 +305,9 @@ class _AuthScreenState extends State<AuthScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: Theme.of(context).colorScheme.copyWith(
-              primary: const Color(0xFFFF7F20),
-            ),
+            colorScheme: Theme.of(
+              context,
+            ).colorScheme.copyWith(primary: const Color(0xFFFF7F20)),
           ),
           child: child!,
         );
@@ -216,9 +336,7 @@ class _AuthScreenState extends State<AuthScreen> {
           );
 
     if (!result.ok) {
-      await _showErrorDialog(
-        result.message ?? 'Enter valid account details.',
-      );
+      await _showErrorDialog(result.message ?? 'Enter valid account details.');
       return;
     }
 
@@ -468,7 +586,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            _loginMode ? 'Welcome, PockiFriend!' : 'Create Account',
+                            _loginMode
+                                ? 'Welcome, PockiFriend!'
+                                : 'Create Account',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 26,
@@ -686,9 +806,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
-                                onPressed: () => _showMessage(
-                                  'Password reset is not connected yet.',
-                                ),
+                                onPressed: _busy ? null : _sendPasswordReset,
                                 child: const Text(
                                   'Forgot Password?',
                                   style: TextStyle(
@@ -787,12 +905,26 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  Future<void> _sendPasswordReset() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      _showMessage('Enter your email address first.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    final error = await AuthService.instance.sendPasswordResetEmail(email);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _showMessage(
+      error ?? 'Password reset email sent. Check your inbox and spam folder.',
+    );
+  }
+
   InputDecoration _authInput(IconData? icon, String hint) {
     return InputDecoration(
       hintText: hint,
-      prefixIcon: icon == null
-          ? null
-          : Icon(icon, size: 18),
+      prefixIcon: icon == null ? null : Icon(icon, size: 18),
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
@@ -832,11 +964,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   String _transactionQuery = '';
   String _transactionFilter = 'This Month';
   String _budgetCategory = 'Food';
+  DateTime? _budgetDateValue;
+
+  DateTime get _budgetDate => _budgetDateValue ?? DateTime.now();
+
+  set _budgetDate(DateTime value) => _budgetDateValue = value;
   AuthUser? _user;
   bool _loggingOut = false;
   bool _loadingFinance = true;
   AppSettings _settings = const AppSettings();
   String? _dailyReminderBanner;
+  bool _showSmartRecommendations = true;
+  bool _showDailyInsight = true;
   bool _biometricLocked = false;
   bool _biometricUnlocking = false;
   bool _ignoreLifecycleLock = false;
@@ -891,10 +1030,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   }
 
   List<AlertModel> get _activeAlerts => activeBudgetAlerts(
-        enabled: _settings.budgetThresholdAlerts,
-        txs: _transactions,
-        budgets: _budgets,
-      );
+    enabled: _settings.budgetThresholdAlerts,
+    txs: _transactions,
+    budgets: _budgets,
+  );
 
   Future<void> _loadSettings() async {
     final settings = await _settingsService.load();
@@ -950,7 +1089,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
         if (result == BiometricUnlockResult.unavailable) {
           _showMessage(await _biometric.availabilityMessage());
         } else if (result != BiometricUnlockResult.canceled) {
-          _showMessage('Could not verify your identity. Biometric lock stays off.');
+          _showMessage(
+            'Could not verify your identity. Biometric lock stays off.',
+          );
         }
         return;
       }
@@ -963,7 +1104,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
       });
       await _settingsService.save(updated);
       if (!mounted) return;
-      _showMessage('Biometric lock enabled. Pockify will lock when you leave the app.');
+      _showMessage(
+        'Biometric lock enabled. Pockify will lock when you leave the app.',
+      );
       return;
     }
 
@@ -976,7 +1119,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
 
     if (result != BiometricUnlockResult.success) {
       if (result != BiometricUnlockResult.canceled) {
-        _showMessage('Could not verify your identity. Biometric lock stays on.');
+        _showMessage(
+          'Could not verify your identity. Biometric lock stays on.',
+        );
       }
       return;
     }
@@ -1190,7 +1335,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String get _displayName {
@@ -1331,6 +1478,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final budget = buildBudget(
       category: _budgetCategory,
       limitText: _budgetLimitController.text,
+      date: _budgetDate.toIso8601String().substring(0, 10),
     );
     setState(() {
       _budgets.add(budget);
@@ -1421,12 +1569,50 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   Future<void> _contributeGoal(String id) async {
     final index = _goals.indexWhere((goal) => goal.id == id);
     if (index == -1) return;
+
+    final amountController = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add to savings goal'),
+        content: TextField(
+          controller: amountController,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Amount',
+            prefixText: '₱ ',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(amountController.text.trim());
+              if (value == null || value <= 0) {
+                _showMessage('Enter an amount greater than ₱0.');
+                return;
+              }
+              Navigator.pop(dialogContext, value);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    amountController.dispose();
+    if (amount == null || amount <= 0 || !mounted) return;
+
     final previous = _goals[index];
-    final updated = contributeToGoal(previous);
+    final updated = contributeToGoal(previous, amount: amount);
     setState(() => _goals[index] = updated);
     if (!ApiConfig.useSupabase) return;
     try {
       await _finance.upsertGoal(updated);
+      await _finance.addGoalContribution(goalId: id, amount: amount);
     } catch (error) {
       if (!mounted) return;
       setState(() => _goals[index] = previous);
@@ -1452,8 +1638,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final offset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
     final panelTop = offset.dy + box.size.height + 8;
     final panelWidth = math.min(320.0, overlayBox.size.width - 24);
-    final panelRight =
-        overlayBox.size.width - (offset.dx + box.size.width);
+    final panelRight = overlayBox.size.width - (offset.dx + box.size.width);
 
     showDialog<void>(
       context: context,
@@ -1461,8 +1646,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final hasUnread =
-                alerts.any((alert) => !_readAlertIds.contains(alert.id));
+            final hasUnread = alerts.any(
+              (alert) => !_readAlertIds.contains(alert.id),
+            );
 
             void refreshDialog() {
               setState(() {});
@@ -1530,7 +1716,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                             const SizedBox(height: 10),
                             if (alerts.isEmpty)
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 child: Text(
                                   !_settings.budgetThresholdAlerts
                                       ? 'Budget threshold alerts are turned off in Profile settings.'
@@ -1622,8 +1810,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                                     vertical: 4,
                                                   ),
                                               minimumSize: Size.zero,
-                                              tapTargetSize: MaterialTapTargetSize
-                                                  .shrinkWrap,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize
+                                                      .shrinkWrap,
                                             ),
                                             child: const Text(
                                               'Mark as read',
@@ -1935,8 +2124,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
       0,
       (sum, item) => sum + (spent[item.category] ?? 0).clamp(0, item.limit),
     );
-    final tips = smartSuggestions(_transactions);
-    final tip = TIPS[DateTime.now().day % TIPS.length];
+    final tips = smartSuggestions(_transactions, _budgets);
+    final dailyInsight = dailyFinancialInsight(_transactions, _budgets);
 
     return ListView(
       padding: _pagePadding(context),
@@ -1963,8 +2152,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   IconButton(
                     tooltip: 'Dismiss',
                     onPressed: () async {
-                      final today =
-                          DateTime.now().toIso8601String().substring(0, 10);
+                      final today = DateTime.now().toIso8601String().substring(
+                        0,
+                        10,
+                      );
                       await _settingsService.markDailyReminderShown(today);
                       if (!mounted) return;
                       setState(() => _dailyReminderBanner = null);
@@ -2250,47 +2441,65 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 ),
               ),
             ),
-        const SizedBox(height: 10),
-        Card(
-          elevation: 0,
-          color: Colors.white,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Smart recommendations',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 10),
-                ...tips.map(
-                  (suggestion) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
+        if (_showSmartRecommendations && tips.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Card(
+            elevation: 0,
+            color: Colors.white,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Smart recommendations',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
-                      child: Text(
-                        suggestion,
-                        style: const TextStyle(fontSize: 11, height: 1.4),
+                      IconButton(
+                        onPressed: () =>
+                            setState(() => _showSmartRecommendations = false),
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        tooltip: 'Close recommendations',
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ...tips.map(
+                    (suggestion) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          suggestion,
+                          style: const TextStyle(fontSize: 11, height: 1.4),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
+        ],
         const SizedBox(height: 16),
         const Text(
           'Budget progress',
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
-        ..._budgets.take(3).map((budget) {
+        ..._budgets.map((budget) {
           final used = spent[budget.category] ?? 0;
           final pct = ((used / budget.limit) * 100).clamp(0, 100);
           final cat = categoryOf(budget.category);
@@ -2416,40 +2625,48 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 .toList(),
           ),
         ),
-        const SizedBox(height: 16),
-        Card(
-          elevation: 0,
-          color: const Color(0xFFFFF7ED),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.lightbulb_outline_rounded,
-                  color: Colors.orange,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tip of the day',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        tip,
-                        style: const TextStyle(fontSize: 11, height: 1.4),
-                      ),
-                    ],
+        if (_showDailyInsight && dailyInsight != null) ...[
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            color: const Color(0xFFFFF7ED),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.lightbulb_outline_rounded,
+                    color: Colors.orange,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Daily insight',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          dailyInsight,
+                          style: const TextStyle(fontSize: 11, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _showDailyInsight = false),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    tooltip: 'Close daily insight',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -2564,9 +2781,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Center(
-                  child: CategoryIcon(tx.category, size: 18),
-                ),
+                child: Center(child: CategoryIcon(tx.category, size: 18)),
               ),
               title: Text(
                 tx.category,
@@ -2711,6 +2926,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     '${peso(used)} / ${peso(budget.limit)} • ${peso((budget.limit - used).clamp(0, budget.limit))} left',
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Budget date: ${budget.date}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -2775,6 +2995,27 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
                               ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final selected = await showDatePicker(
+                                context: context,
+                                initialDate: _budgetDate,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
+                              );
+                              if (selected != null && mounted) {
+                                setState(() => _budgetDate = selected);
+                              }
+                            },
+                            icon: const Icon(Icons.calendar_today, size: 16),
+                            label: Text(
+                              '${_budgetDate.month.toString().padLeft(2, '0')}/${_budgetDate.day.toString().padLeft(2, '0')}/${_budgetDate.year}',
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
@@ -2853,9 +3094,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   ),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: TextButton(
+                    child: TextButton.icon(
                       onPressed: () => _contributeGoal(goal.id),
-                      child: const Text('+ ₱500'),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add amount'),
                     ),
                   ),
                 ],
@@ -2952,35 +3194,37 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     );
                     final legend = Column(
                       children: [
-                        ...sorted.take(6).map(
-                          (item) => Padding(
-                            padding: const EdgeInsets.only(bottom: 7),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 5,
-                                  backgroundColor: _colorFromHex(
-                                    categoryOf(item.key).color,
-                                  ),
+                        ...sorted
+                            .take(6)
+                            .map(
+                              (item) => Padding(
+                                padding: const EdgeInsets.only(bottom: 7),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 5,
+                                      backgroundColor: _colorFromHex(
+                                        categoryOf(item.key).color,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        item.key,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${(item.value / totalSpent * 100).round()}%',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item.key,
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                ),
-                                Text(
-                                  '${(item.value / totalSpent * 100).round()}%',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ),
                         if (sorted.isEmpty)
                           const Align(
                             alignment: Alignment.centerLeft,
@@ -3075,32 +3319,35 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     style: TextStyle(color: Colors.grey),
                   )
                 else
-                  ...sorted.take(5).map(
-                    (entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ...sorted
+                      .take(5)
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(entry.key),
-                              Text(peso(entry.value)),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(entry.key),
+                                  Text(peso(entry.value)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              LinearProgressIndicator(
+                                value: sorted.first.value == 0
+                                    ? 0
+                                    : entry.value / sorted.first.value,
+                                minHeight: 8,
+                                borderRadius: BorderRadius.circular(999),
+                                color: Colors.teal,
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          LinearProgressIndicator(
-                            value: sorted.first.value == 0
-                                ? 0
-                                : entry.value / sorted.first.value,
-                            minHeight: 8,
-                            borderRadius: BorderRadius.circular(999),
-                            color: Colors.teal,
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -3143,8 +3390,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final healthLabel = score >= 75
         ? 'Excellent'
         : score >= 60
-            ? 'Good'
-            : 'Needs attention';
+        ? 'Good'
+        : 'Needs attention';
     final email = _user?.email ?? '';
     final currency = _user?.currency;
     final employment = _user?.employmentStatus;
@@ -3185,7 +3432,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                         ),
                       Text(
                         'Wallet health $score · $healthLabel',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
                       ),
                       if (currency != null || employment != null)
                         Text(
@@ -3321,8 +3571,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     !_settings.budgetThresholdAlerts
                         ? 'Budget threshold alerts are turned off.'
                         : alerts.isEmpty
-                            ? 'Your budgets are on track.'
-                            : alerts.first.body,
+                        ? 'Your budgets are on track.'
+                        : alerts.first.body,
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
@@ -3336,10 +3586,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
             children: AppSettings.labels
                 .map(
                   (label) => SwitchListTile(
-                    title: Text(
-                      label,
-                      style: const TextStyle(fontSize: 13),
-                    ),
+                    title: Text(label, style: const TextStyle(fontSize: 13)),
                     subtitle: Text(
                       _settingSubtitle(label),
                       style: const TextStyle(fontSize: 11),
@@ -3432,9 +3679,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   ),
                   if (_selectedIndex == 0)
                     Text(
-                      MaterialLocalizations.of(context).formatMediumDate(
-                        DateTime.now(),
-                      ),
+                      MaterialLocalizations.of(
+                        context,
+                      ).formatMediumDate(DateTime.now()),
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                 ],
@@ -3668,10 +3915,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
       _profileView(),
     ];
 
-    final alertCount = unreadAlertCount(
-      _activeAlerts,
-      _readAlertIds,
-    );
+    final alertCount = unreadAlertCount(_activeAlerts, _readAlertIds);
     final useSideNav = Responsive.useSideNav(context);
 
     if (useSideNav) {

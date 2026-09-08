@@ -23,7 +23,10 @@ class FinanceRepository {
         .order('created_at', ascending: false);
 
     return (rows as List)
-        .map((row) => TransactionModel.fromSupabase(Map<String, dynamic>.from(row)))
+        .map(
+          (row) =>
+              TransactionModel.fromSupabase(Map<String, dynamic>.from(row)),
+        )
         .toList();
   }
 
@@ -70,7 +73,11 @@ class FinanceRepository {
   Future<void> deleteTransaction(String id) async {
     final userId = _userId;
     if (userId == null) return;
-    await _client.from('transactions').delete().eq('id', id).eq('user_id', userId);
+    await _client
+        .from('transactions')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
   }
 
   Future<void> upsertBudget(BudgetModel budget) async {
@@ -96,6 +103,22 @@ class FinanceRepository {
     await _client.from('goals').upsert({
       ...goal.toSupabase(),
       'user_id': userId,
+    });
+  }
+
+  Future<void> addGoalContribution({
+    required String goalId,
+    required double amount,
+    String? date,
+  }) async {
+    final userId = _userId;
+    if (userId == null) throw StateError('Not signed in');
+
+    await _client.from('goal_contributions').insert({
+      'goal_id': goalId,
+      'user_id': userId,
+      'amount': amount,
+      'contributed_at': date ?? todayIso(),
     });
   }
 

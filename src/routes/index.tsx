@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
-import { ArrowUpRight, Flame, Lightbulb, TrendingUp } from "lucide-react";
+import { ArrowUpRight, Flame } from "lucide-react";
 import { AppShell } from "@/components/pockify/AppShell";
 import { usePockify } from "@/lib/pockify-store";
 import {
@@ -11,10 +11,8 @@ import {
   healthScore,
   monthlyTotals,
   peso,
-  smartSuggestions,
   sparkline,
   spentByCategory,
-  TIPS,
 } from "@/lib/pockify";
 
 export const Route = createFileRoute("/")({
@@ -44,15 +42,16 @@ function Dashboard() {
   const level = healthLevel(score);
   const streak = essentialStreak(transactions);
   const alerts = budgetAlerts(transactions, budgets);
-  const tips = smartSuggestions(transactions);
   const spent = spentByCategory(transactions);
   const budgetTotal = budgets.reduce((a, b) => a + b.limit, 0);
   const budgetUsed = budgets.reduce((a, b) => a + Math.min(b.limit, spent.get(b.category) ?? 0), 0);
   const recent = [...transactions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
-  const tip = TIPS[new Date().getDate() % TIPS.length];
 
   return (
-    <AppShell title="Dashboard" subtitle={new Date().toLocaleDateString("en-PH", { dateStyle: "medium" })}>
+    <AppShell
+      title="Dashboard"
+      subtitle={new Date().toLocaleDateString("en-PH", { dateStyle: "medium" })}
+    >
       <section className="card-raised overflow-hidden p-5">
         <p className="text-muted-foreground text-xs font-semibold">Current balance</p>
         <div className="flex items-end justify-between">
@@ -140,21 +139,6 @@ function Dashboard() {
         </section>
       )}
 
-      <section className="card-raised mt-4 p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-extrabold">
-            <TrendingUp className="text-accent size-4" /> Smart recommendations
-          </h2>
-        </div>
-        <ul className="space-y-2">
-          {tips.map((s) => (
-            <li key={s} className="bg-surface-sunken rounded-2xl p-3 text-xs leading-relaxed">
-              {s}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <section className="mt-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-extrabold">Budget progress</h2>
@@ -163,7 +147,7 @@ function Dashboard() {
           </Link>
         </div>
         <div className="space-y-2">
-          {budgets.slice(0, 3).map((b) => {
+          {budgets.map((b) => {
             const used = spent.get(b.category) ?? 0;
             const pct = Math.min(100, Math.round((used / b.limit) * 100));
             const cat = categoryOf(b.category);
@@ -220,14 +204,6 @@ function Dashboard() {
               </div>
             );
           })}
-        </div>
-      </section>
-
-      <section className="card-soft mt-4 flex gap-3 p-4">
-        <Lightbulb className="text-warning mt-0.5 size-4 shrink-0" />
-        <div>
-          <p className="text-xs font-extrabold">Tip of the day</p>
-          <p className="text-muted-foreground mt-0.5 text-[11px] leading-relaxed">{tip}</p>
         </div>
       </section>
     </AppShell>

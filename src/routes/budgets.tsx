@@ -32,8 +32,10 @@ function BudgetsPage() {
   const spent = spentByCategory(transactions);
   const [category, setCategory] = useState("Gaming");
   const [limit, setLimit] = useState("");
+  const [budgetDate, setBudgetDate] = useState(new Date().toISOString().slice(0, 10));
   const [goalTitle, setGoalTitle] = useState("");
   const [goalTarget, setGoalTarget] = useState("");
+  const [contributionAmounts, setContributionAmounts] = useState<Record<string, string>>({});
 
   return (
     <AppShell title="Budgets" subtitle="Monthly limits & savings goals">
@@ -47,7 +49,14 @@ function BudgetsPage() {
             <div key={b.id} className="card-soft p-4">
               <div className="flex items-center gap-3">
                 <span className="text-lg">{cat.icon}</span>
-                <p className="flex-1 text-sm font-bold">{b.category}</p>
+                <div className="flex-1">
+                  <p className="text-sm font-bold">{b.category}</p>
+                  <p className="text-muted-foreground text-[11px] font-medium">
+                    {new Date(`${b.date}T00:00:00`).toLocaleDateString("en-PH", {
+                      dateStyle: "medium",
+                    })}
+                  </p>
+                </div>
                 <span
                   className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
                     over
@@ -100,7 +109,7 @@ function BudgetsPage() {
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -114,6 +123,13 @@ function BudgetsPage() {
             placeholder="Limit"
             className="bg-surface-sunken num h-11 w-28 rounded-xl border-0"
           />
+          <Input
+            type="date"
+            value={budgetDate}
+            onChange={(e) => setBudgetDate(e.target.value)}
+            aria-label="Budget date"
+            className="bg-surface-sunken h-11 w-40 rounded-xl border-0"
+          />
           <Button
             size="icon"
             className="size-11 shrink-0 rounded-xl"
@@ -123,7 +139,11 @@ function BudgetsPage() {
                 toast.error("Add a category and limit");
                 return;
               }
-              addBudget({ category, limit: n });
+              if (!budgetDate) {
+                toast.error("Choose a budget date");
+                return;
+              }
+              addBudget({ category, limit: n, date: budgetDate });
               setLimit("");
               toast.success(`${category} budget set to ${peso(n)}`);
             }}
@@ -154,15 +174,65 @@ function BudgetsPage() {
                 <p className="num text-xs font-semibold">
                   {peso(g.current)} / {peso(g.target)}
                 </p>
-                <button
-                  onClick={() => {
-                    contributeGoal(g.id, 500);
-                    toast.success(`₱500 added to ${g.title}`);
-                  }}
-                  className="bg-surface-sunken rounded-full px-3 py-1.5 text-xs font-bold"
-                >
-                  + ₱500
-                </button>
+                <div className="flex gap-2">
+                  <Input
+                    value={contributionAmounts[g.id] ?? ""}
+                    onChange={(e) =>
+                      setContributionAmounts((values) => ({ ...values, [g.id]: e.target.value }))
+                    }
+                    inputMode="decimal"
+                    placeholder="Amount"
+                    aria-label={`Amount to add to ${g.title}`}
+                    className="bg-surface-sunken h-9 w-24 rounded-lg border-0"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const amount = Number(contributionAmounts[g.id]);
+                      if (!Number.isFinite(amount) || amount <= 0) {
+                        toast.error("Enter an amount greater than ₱0");
+                        return;
+                      }
+                      contributeGoal(g.id, amount);
+                      setContributionAmounts((values) => ({ ...values, [g.id]: "" }));
+                      toast.success(`${peso(amount)} added to ${g.title}`);
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+              <div className="border-border mt-4 border-t pt-3">
+                <p className="text-muted-foreground text-[11px] font-bold uppercase tracking-wide">
+                  Contribution history
+                </p>
+                <div className="mt-2 space-y-2">
+                  {g.contributions.map((contribution, index) => {
+                    const runningTotal = g.contributions
+                      .slice(0, index + 1)
+                      .reduce((total, item) => total + item.amount, 0);
+                    return (
+                      <div
+                        key={contribution.id}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <span className="text-muted-foreground">
+                          {new Date(`${contribution.date}T00:00:00`).toLocaleDateString("en-PH", {
+                            dateStyle: "medium",
+                          })}
+                        </span>
+                        <span className="num font-semibold">+{peso(contribution.amount)}</span>
+                        <span className="num text-muted-foreground">
+                          {peso(runningTotal)} total
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {g.contributions.length === 0 && (
+                    <p className="text-muted-foreground text-xs">No contributions yet.</p>
+                  )}
+                </div>
+                <p className="num mt-3 text-xs font-extrabold">Total saved: {peso(g.current)}</p>
               </div>
             </div>
           );

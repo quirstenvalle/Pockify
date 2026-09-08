@@ -107,20 +107,33 @@ class BudgetModel {
   final String id;
   final String category;
   final double limit;
+  final String? _date;
 
-  BudgetModel({required this.id, required this.category, required this.limit});
+  String get date => _date ?? todayIso();
+
+  BudgetModel({
+    required this.id,
+    required this.category,
+    required this.limit,
+    String? date,
+  }) : _date = date;
 
   Map<String, dynamic> toSupabase() => {
     'id': id,
     'category': category,
     'limit_amount': limit,
+    'budget_date': date,
   };
 
-  factory BudgetModel.fromSupabase(Map<String, dynamic> json) => BudgetModel(
-    id: json['id'] as String,
-    category: json['category'] as String,
-    limit: (json['limit_amount'] as num).toDouble(),
-  );
+  factory BudgetModel.fromSupabase(Map<String, dynamic> json) {
+    final rawDate = json['budget_date'] ?? json['created_at'];
+    return BudgetModel(
+      id: json['id'] as String,
+      category: json['category'] as String,
+      limit: (json['limit_amount'] as num).toDouble(),
+      date: rawDate == null ? null : '$rawDate'.substring(0, 10),
+    );
+  }
 }
 
 class GoalModel {
@@ -357,10 +370,7 @@ String _shortMonth(int month) {
 List<double> balanceSparkline(List<TransactionModel> txs, {int points = 12}) {
   final sorted = [...txs]..sort((a, b) => a.date.compareTo(b.date));
   if (sorted.isEmpty) {
-    return List<double>.generate(
-      points,
-      (i) => 50 + (i.isEven ? 12.0 : -8.0),
-    );
+    return List<double>.generate(points, (i) => 50 + (i.isEven ? 12.0 : -8.0));
   }
 
   var running = 0.0;
@@ -406,14 +416,12 @@ class AlertModel {
   });
 }
 
-const List<String> TIPS = [
-  'Cooking one extra meal at home this week can noticeably reduce food expenses.',
-  'Review subscriptions monthly to avoid paying for services you no longer use.',
-  'Setting aside a small amount after every payday builds an emergency fund over time.',
-  'Log expenses the moment they happen — memory is the biggest budgeting leak.',
-];
-
-List<String> smartSuggestions(List<TransactionModel> txs) {
+List<String> smartSuggestions(
+  List<TransactionModel> txs,
+  List<BudgetModel> budgets,
+) {
+  final totals = monthlyTotals(txs);
+  final spent = spentByCategory(txs);
   final week = txs
       .where(
         (x) =>
@@ -422,6 +430,21 @@ List<String> smartSuggestions(List<TransactionModel> txs) {
       )
       .toList();
   final suggestions = <String>[];
+
+  if (totals.balance < 0) {
+    suggestions.add(
+      'Your monthly balance is ${peso(totals.balance.abs())} below zero. Pause non-essential spending until income catches up.',
+    );
+  }
+
+  for (final budget in budgets) {
+    final used = spent[budget.category] ?? 0;
+    if (used > budget.limit) {
+      suggestions.add(
+        '${budget.category} is ${peso(used - budget.limit)} over budget. Keep the next ${budget.category.toLowerCase()} purchase below the limit.',
+      );
+    }
+  }
 
   final coffee = week.where((x) => x.category == 'Coffee').toList();
   if (coffee.length >= 2) {
@@ -448,11 +471,41 @@ List<String> smartSuggestions(List<TransactionModel> txs) {
     );
   }
 
-  if (suggestions.isEmpty) {
-    suggestions.add(TIPS[DateTime.now().day % TIPS.length]);
+  return suggestions.take(3).toList();
+}
+
+String? dailyFinancialInsight(
+  List<TransactionModel> txs,
+  List<BudgetModel> budgets,
+) {
+  final totals = monthlyTotals(txs);
+  final spent = spentByCategory(txs);
+  final candidates = <String>[];
+
+  if (totals.balance < 0) {
+    candidates.add(
+      'Your spending is ${peso(totals.balance.abs())} higher than your income this month. Review your largest categories today.',
+    );
   }
 
-  return suggestions.take(3).toList();
+  for (final budget in budgets) {
+    final used = spent[budget.category] ?? 0;
+    final remaining = budget.limit - used;
+    if (remaining >= 0 && budget.limit > 0 && used / budget.limit >= 0.8) {
+      candidates.add(
+        '${budget.category} has ${peso(remaining)} left in its budget. Check the remaining amount before spending more.',
+      );
+    }
+  }
+
+  if (totals.balance > 0 && totals.income > 0) {
+    candidates.add(
+      'You have ${peso(totals.balance)} left after this month\'s expenses. Consider assigning part of it to a savings goal.',
+    );
+  }
+
+  if (candidates.isEmpty) return null;
+  return candidates[DateTime.now().day % candidates.length];
 }
 
 List<AlertModel> budgetAlerts(

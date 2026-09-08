@@ -28,8 +28,9 @@ class SupabaseAuthClient {
   }) async {
     final normalized = email.trim().toLowerCase();
     try {
-      final cleanCurrency =
-          (currency == null || currency == 'Select currency') ? null : currency;
+      final cleanCurrency = (currency == null || currency == 'Select currency')
+          ? null
+          : currency;
       final cleanEmployment =
           (employmentStatus == null || employmentStatus == 'Select status')
           ? null
@@ -37,8 +38,8 @@ class SupabaseAuthClient {
       final birthDateIso = birthDate == null
           ? null
           : '${birthDate.year.toString().padLeft(4, '0')}-'
-              '${birthDate.month.toString().padLeft(2, '0')}-'
-              '${birthDate.day.toString().padLeft(2, '0')}';
+                '${birthDate.month.toString().padLeft(2, '0')}-'
+                '${birthDate.day.toString().padLeft(2, '0')}';
 
       final response = await _client.auth.signUp(
         email: normalized,
@@ -72,9 +73,9 @@ class SupabaseAuthClient {
       }
 
       if (response.session != null) {
-        final mapped = (await _userWithProfile(user)).copyWith(
-          emailVerified: true,
-        );
+        final mapped = (await _userWithProfile(
+          user,
+        )).copyWith(emailVerified: true);
         await _upsertProfile(mapped);
         return pockify.AuthResult.success(
           mapped,
@@ -179,6 +180,36 @@ class SupabaseAuthClient {
     }
   }
 
+  Future<String?> sendPasswordResetEmail(String email) async {
+    try {
+      // Let Supabase use its configured Site URL on web; localhost origins
+      // commonly fail the project's redirect allowlist.
+      final redirectTo = kIsWeb ? null : ApiConfig.oauthRedirectUrl;
+      await _client.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        redirectTo: redirectTo,
+      );
+      return null;
+    } on AuthException catch (error) {
+      final rawMessage = error.message;
+      Map<String, dynamic>? payload;
+      try {
+        final decoded = jsonDecode(rawMessage);
+        if (decoded is Map) payload = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+      final message = '${payload?['message'] ?? rawMessage}'.toLowerCase();
+      final code = '${payload?['code'] ?? ''}'.toLowerCase();
+      if (code == 'unexpected_failure' ||
+          message.contains('unexpected failure') ||
+          message.contains('error sending recovery email')) {
+        return 'Supabase could not send the recovery email. Check SMTP credentials, the verified sender address, and Supabase Authentication > SMTP Settings.';
+      }
+      return rawMessage;
+    } catch (error) {
+      return 'Could not send password reset email. ($error)';
+    }
+  }
+
   Future<pockify.AuthResult> signInWithGoogle() async {
     try {
       if (!await _isGoogleProviderEnabled()) {
@@ -254,9 +285,9 @@ class SupabaseAuthClient {
         );
       }
 
-      final mapped = (await _userWithProfile(user)).copyWith(
-        emailVerified: true,
-      );
+      final mapped = (await _userWithProfile(
+        user,
+      )).copyWith(emailVerified: true);
       await _upsertProfile(mapped);
       return pockify.AuthResult.success(
         mapped,
@@ -350,6 +381,25 @@ class SupabaseAuthClient {
     });
   }
 
+  StreamSubscription<AuthState> watchPasswordRecovery(
+    void Function() onRecovery,
+  ) {
+    return _client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) onRecovery();
+    });
+  }
+
+  Future<String?> updatePassword(String password) async {
+    try {
+      await _client.auth.updateUser(UserAttributes(password: password));
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (error) {
+      return 'Could not update password. ($error)';
+    }
+  }
+
   Future<AuthResponse> _verifyEmailOtp({
     required String email,
     required String token,
@@ -375,10 +425,7 @@ class SupabaseAuthClient {
   }
 
   Future<void> _resendEmailOtp(String email) async {
-    await _client.auth.resend(
-      type: OtpType.signup,
-      email: email,
-    );
+    await _client.auth.resend(type: OtpType.signup, email: email);
   }
 
   Future<pockify.AuthResult> me() async {
@@ -451,8 +498,8 @@ class SupabaseAuthClient {
         'birth_date': user.birthDate == null
             ? null
             : '${user.birthDate!.year.toString().padLeft(4, '0')}-'
-                '${user.birthDate!.month.toString().padLeft(2, '0')}-'
-                '${user.birthDate!.day.toString().padLeft(2, '0')}',
+                  '${user.birthDate!.month.toString().padLeft(2, '0')}-'
+                  '${user.birthDate!.day.toString().padLeft(2, '0')}',
         'monthly_income': user.monthlyIncome,
         'monthly_budget_goal': user.monthlyBudgetGoal,
         'avatar_url': user.avatarUrl,
@@ -466,8 +513,8 @@ class SupabaseAuthClient {
     final name = (profile?['full_name'] as String?)?.trim().isNotEmpty == true
         ? profile!['full_name'] as String
         : (meta['full_name'] as String?) ??
-            (meta['name'] as String?) ??
-            (user.email?.split('@').first ?? 'User');
+              (meta['name'] as String?) ??
+              (user.email?.split('@').first ?? 'User');
 
     DateTime? birthDate;
     final birthRaw = profile?['birth_date'] ?? meta['birth_date'];
@@ -487,10 +534,10 @@ class SupabaseAuthClient {
     final avatarUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
         ? profileAvatar
         : (metaAvatar != null && metaAvatar.isNotEmpty)
-            ? metaAvatar
-            : (googlePicture != null && googlePicture.isNotEmpty)
-                ? googlePicture
-                : null;
+        ? metaAvatar
+        : (googlePicture != null && googlePicture.isNotEmpty)
+        ? googlePicture
+        : null;
 
     return pockify.AuthUser(
       id: user.id,
@@ -498,16 +545,21 @@ class SupabaseAuthClient {
       email: (user.email ?? '').toLowerCase(),
       passwordHash: '',
       passwordSalt: '',
-      emailVerified: user.emailConfirmedAt != null ||
+      emailVerified:
+          user.emailConfirmedAt != null ||
           (user.identities?.any((identity) => identity.provider == 'google') ??
               false),
-      currency: (profile?['currency'] as String?) ?? meta['currency'] as String?,
-      employmentStatus: (profile?['employment_status'] as String?) ??
+      currency:
+          (profile?['currency'] as String?) ?? meta['currency'] as String?,
+      employmentStatus:
+          (profile?['employment_status'] as String?) ??
           meta['employment_status'] as String?,
       birthDate: birthDate,
-      monthlyIncome: asDouble(profile?['monthly_income']) ??
+      monthlyIncome:
+          asDouble(profile?['monthly_income']) ??
           asDouble(meta['monthly_income']),
-      monthlyBudgetGoal: asDouble(profile?['monthly_budget_goal']) ??
+      monthlyBudgetGoal:
+          asDouble(profile?['monthly_budget_goal']) ??
           asDouble(meta['monthly_budget_goal']),
       avatarUrl: avatarUrl,
       createdAt: DateTime.tryParse(user.createdAt) ?? DateTime.now(),

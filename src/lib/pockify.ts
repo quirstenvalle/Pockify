@@ -23,6 +23,13 @@ export type Budget = {
   id: string;
   category: string;
   limit: number;
+  date: string;
+};
+
+export type GoalContribution = {
+  id: string;
+  amount: number;
+  date: string;
 };
 
 export type Goal = {
@@ -30,6 +37,7 @@ export type Goal = {
   title: string;
   target: number;
   current: number;
+  contributions: GoalContribution[];
 };
 
 export const peso = (n: number) =>
@@ -122,31 +130,44 @@ export const SEED_TRANSACTIONS: Transaction[] = [
 ];
 
 export const SEED_BUDGETS: Budget[] = [
-  { id: "b1", category: "Food", limit: 5000 },
-  { id: "b2", category: "Transportation", limit: 4000 },
-  { id: "b3", category: "Grocery", limit: 3500 },
-  { id: "b4", category: "Shopping", limit: 2000 },
-  { id: "b5", category: "Coffee", limit: 600 },
-  { id: "b6", category: "Entertainment", limit: 1200 },
+  { id: "b1", category: "Food", limit: 5000, date: d(0) },
+  { id: "b2", category: "Transportation", limit: 4000, date: d(0) },
+  { id: "b3", category: "Grocery", limit: 3500, date: d(0) },
+  { id: "b4", category: "Shopping", limit: 2000, date: d(0) },
+  { id: "b5", category: "Coffee", limit: 600, date: d(0) },
+  { id: "b6", category: "Entertainment", limit: 1200, date: d(0) },
 ];
 
 export const SEED_GOALS: Goal[] = [
-  { id: "g1", title: "New Laptop", target: 50000, current: 18500 },
-  { id: "g2", title: "Emergency Fund", target: 30000, current: 12400 },
-];
-
-export const TIPS = [
-  "Cooking one extra meal at home this week can noticeably reduce food expenses.",
-  "Review subscriptions monthly to avoid paying for services you no longer use.",
-  "Setting aside a small amount after every payday builds an emergency fund over time.",
-  "Log expenses the moment they happen — memory is the biggest budgeting leak.",
+  {
+    id: "g1",
+    title: "New Laptop",
+    target: 50000,
+    current: 18500,
+    contributions: [
+      { id: "c1", amount: 10000, date: d(28) },
+      { id: "c2", amount: 5000, date: d(14) },
+      { id: "c3", amount: 3500, date: d(3) },
+    ],
+  },
+  {
+    id: "g2",
+    title: "Emergency Fund",
+    target: 30000,
+    current: 12400,
+    contributions: [
+      { id: "c4", amount: 7400, date: d(21) },
+      { id: "c5", amount: 5000, date: d(7) },
+    ],
+  },
 ];
 
 /* ---------- derived helpers ---------- */
 
 export const sum = (list: Transaction[]) => list.reduce((a, b) => a + b.amount, 0);
 
-export const isThisMonth = (iso: string) => iso.slice(0, 7) === new Date().toISOString().slice(0, 7);
+export const isThisMonth = (iso: string) =>
+  iso.slice(0, 7) === new Date().toISOString().slice(0, 7);
 
 export const daysAgo = (iso: string) =>
   Math.round((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86400000);
@@ -253,26 +274,6 @@ export function budgetAlerts(txs: Transaction[], budgets: Budget[]): Alert[] {
 
 export const unreadAlertCount = (alerts: Alert[], readIds: ReadonlySet<string>) =>
   alerts.filter((alert) => !readIds.has(alert.id)).length;
-
-export function smartSuggestions(txs: Transaction[]): string[] {
-  const week = txs.filter((x) => x.kind === "expense" && daysAgo(x.date) <= 7);
-  const out: string[] = [];
-  const coffee = week.filter((x) => x.category === "Coffee");
-  if (coffee.length >= 2)
-    out.push(
-      `You've bought coffee ${coffee.length} times this week. Making coffee at home twice next week could save around ${peso(Math.round(sum(coffee) / coffee.length) * 2)}.`,
-    );
-  const transport = sum(week.filter((x) => x.category === "Transportation"));
-  if (transport > 150)
-    out.push(
-      `Transportation reached ${peso(transport)} this week. Walking short distances could trim it noticeably.`,
-    );
-  const food = sum(week.filter((x) => x.category === "Food"));
-  if (food > 0)
-    out.push(`Food spending this week is ${peso(food)} — packing lunch twice keeps it in range.`);
-  out.push("Consider transferring ₱500 into savings while your balance is still positive.");
-  return out.slice(0, 4);
-}
 
 export function weeklyBars(txs: Transaction[]) {
   const weeks = [0, 1, 2, 3].map((w) => ({ name: `Week ${w + 1}`, amount: 0 }));

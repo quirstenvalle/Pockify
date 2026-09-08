@@ -1,4 +1,12 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   SEED_BUDGETS,
   SEED_GOALS,
@@ -7,6 +15,14 @@ import {
   type Goal,
   type Transaction,
 } from "./pockify";
+import {
+  addGoalContribution as persistGoalContribution,
+  createBudget as persistBudget,
+  createGoal as persistGoal,
+  deleteBudget as persistBudgetDeletion,
+  fetchFinance,
+  hasFinanceApiSession,
+} from "./pockify-api";
 
 type Store = {
   user: { name: string; email: string };
@@ -20,7 +36,7 @@ type Store = {
   addBudget: (b: Omit<Budget, "id">) => void;
   updateBudget: (id: string, limit: number) => void;
   removeBudget: (id: string) => void;
-  addGoal: (g: Omit<Goal, "id">) => void;
+  addGoal: (g: Omit<Goal, "id" | "current" | "contributions">) => void;
   contributeGoal: (id: string, amount: number) => void;
   readAlertIds: string[];
   markAlertRead: (id: string) => void;
@@ -36,6 +52,38 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
   const [budgets, setBudgets] = useState<Budget[]>(SEED_BUDGETS);
   const [goals, setGoals] = useState<Goal[]>(SEED_GOALS);
   const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("pockify_finance");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as { budgets?: Budget[]; goals?: Goal[] };
+        if (parsed.budgets) setBudgets(parsed.budgets);
+        if (parsed.goals) setGoals(parsed.goals);
+      } catch {
+        localStorage.removeItem("pockify_finance");
+      }
+    }
+
+    fetchFinance()
+      .then((finance) => {
+        if (finance) {
+          setBudgets(finance.budgets);
+          setGoals(finance.goals);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        hydrated.current = true;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (hydrated.current && !hasFinanceApiSession()) {
+      localStorage.setItem("pockify_finance", JSON.stringify({ budgets, goals }));
+    }
+  }, [budgets, goals]);
 
   const value = useMemo<Store>(
     () => ({
@@ -44,27 +92,60 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
       budgets,
       goals,
       readAlertIds,
-      markAlertRead: (id) =>
-        setReadAlertIds((prev) => (prev.includes(id) ? prev : [...prev, id])),
-      markAllAlertsRead: (ids) =>
-        setReadAlertIds((prev) => [...new Set([...prev, ...ids])]),
+      markAlertRead: (id) => setReadAlertIds((prev) => (prev.includes(id) ? prev : [...prev, id])),
+      markAllAlertsRead: (ids) => setReadAlertIds((prev) => [...new Set([...prev, ...ids])]),
       addTransaction: (tx) => setTransactions((p) => [{ ...tx, id: uid() }, ...p]),
       updateTransaction: (id, patch) =>
         setTransactions((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t))),
       removeTransaction: (id) => setTransactions((p) => p.filter((t) => t.id !== id)),
       toggleFavorite: (id) =>
         setTransactions((p) => p.map((t) => (t.id === id ? { ...t, favorite: !t.favorite } : t))),
-      addBudget: (b) => setBudgets((p) => [...p, { ...b, id: uid() }]),
+      addBudget: (b) => {
+        const optimistic = { ...b, id: uid() };
+        setBudgets((p) => [optimistic, ...p]);
+        persistBudget(b)
+          .then(
+            (saved) =>
+              saved &&
+              setBudgets((p) => p.map((item) => (item.id === optimistic.id ? saved : item))),
+          )
+          .catch(() => undefined);
+      },
       updateBudget: (id, limit) =>
         setBudgets((p) => p.map((b) => (b.id === id ? { ...b, limit } : b))),
-      removeBudget: (id) => setBudgets((p) => p.filter((b) => b.id !== id)),
-      addGoal: (g) => setGoals((p) => [...p, { ...g, id: uid() }]),
-      contributeGoal: (id, amount) =>
+      removeBudget: (id) => {
+        setBudgets((p) => p.filter((b) => b.id !== id));
+        persistBudgetDeletion(id).catch(() => undefined);
+      },
+      addGoal: (g) => {
+        const optimistic: Goal = { ...g, id: uid(), current: 0, contributions: [] };
+        setGoals((p) => [...p, optimistic]);
+        persistGoal(g)
+          .then(
+            (saved) =>
+              saved && setGoals((p) => p.map((item) => (item.id === optimistic.id ? saved : item))),
+          )
+          .catch(() => undefined);
+      },
+      contributeGoal: (id, amount) => {
+        const date = new Date().toISOString().slice(0, 10);
         setGoals((p) =>
           p.map((g) =>
-            g.id === id ? { ...g, current: Math.min(g.target, g.current + amount) } : g,
+            g.id === id
+              ? {
+                  ...g,
+                  current: g.current + amount,
+                  contributions: [...g.contributions, { id: uid(), amount, date }],
+                }
+              : g,
           ),
-        ),
+        );
+        persistGoalContribution(id, amount, date)
+          .then(
+            (saved) => saved && setGoals((p) => p.map((item) => (item.id === id ? saved : item))),
+          )
+          .catch(() => undefined);
+      },
     }),
     [transactions, budgets, goals, readAlertIds],
   );

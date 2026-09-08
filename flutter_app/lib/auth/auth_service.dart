@@ -48,6 +48,17 @@ class AuthService {
     return sub.cancel;
   }
 
+  void Function()? watchPasswordRecovery(void Function() onRecovery) {
+    if (!_useSupabase) return null;
+    final sub = _supabase.watchPasswordRecovery(onRecovery);
+    return sub.cancel;
+  }
+
+  Future<String?> updatePassword(String password) async {
+    if (_useSupabase) return _supabase.updatePassword(password);
+    return 'Password reset is only available when connected to Supabase.';
+  }
+
   Future<AuthUser?> currentUser() async {
     final email = await _repository.getSessionEmail();
     if (email == null) return null;
@@ -187,7 +198,11 @@ class AuthService {
     final normalized = email.trim().toLowerCase();
     final user = await _repository.findByEmail(normalized);
     if (user == null ||
-        !SecureHashing.matches(password, user.passwordSalt, user.passwordHash)) {
+        !SecureHashing.matches(
+          password,
+          user.passwordSalt,
+          user.passwordHash,
+        )) {
       return AuthResult.failure(
         AuthFailureCode.invalidCredentials,
         'Incorrect email or password.',
@@ -206,6 +221,13 @@ class AuthService {
 
     await _repository.setSessionEmail(user.email);
     return AuthResult.success(user);
+  }
+
+  Future<String?> sendPasswordResetEmail(String email) async {
+    if (_useSupabase) {
+      return _supabase.sendPasswordResetEmail(email);
+    }
+    return 'Password reset email is only available when connected to Supabase.';
   }
 
   Future<AuthResult> signInWithGoogle() async {
@@ -249,7 +271,8 @@ class AuthService {
 
     final existing = await _repository.getChallenge(normalized);
     if (existing?.lastSentAt != null) {
-      final wait = resendCooldown - DateTime.now().difference(existing!.lastSentAt!);
+      final wait =
+          resendCooldown - DateTime.now().difference(existing!.lastSentAt!);
       if (wait > Duration.zero) {
         return AuthResult.failure(
           AuthFailureCode.resendCooldown,
@@ -309,7 +332,9 @@ class AuthService {
   }
 
   Future<Duration?> remainingOtpTime(String email) async {
-    final challenge = await _repository.getChallenge(email.trim().toLowerCase());
+    final challenge = await _repository.getChallenge(
+      email.trim().toLowerCase(),
+    );
     if (challenge != null) {
       if (challenge.isExpired) return Duration.zero;
       return challenge.remaining;
@@ -334,7 +359,10 @@ class AuthService {
       await _repository.setAuthToken(result.token);
     }
     if (result.demoCode != null && result.user != null) {
-      await _repository.setDemoMailboxCode(result.user!.email, result.demoCode!);
+      await _repository.setDemoMailboxCode(
+        result.user!.email,
+        result.demoCode!,
+      );
     }
     return result;
   }
@@ -415,7 +443,7 @@ class AuthService {
   }) async {
     final normalized = email.trim().toLowerCase();
     final existing = await _repository.findByEmail(normalized);
-    if (existing != null && existing.emailVerified) {
+    if (!_useSupabase && existing != null && existing.emailVerified) {
       return AuthResult.failure(
         AuthFailureCode.emailTaken,
         'An account with this email already exists. Sign in instead.',
