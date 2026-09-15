@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../auth/auth_models.dart';
 import '../auth/auth_service.dart';
+import '../auth_validation.dart';
 import '../widgets/profile_avatar.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -23,8 +24,6 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _nameController = TextEditingController();
-  final _incomeController = TextEditingController();
-  final _budgetGoalController = TextEditingController();
 
   late String _currency;
   late String _employmentStatus;
@@ -61,24 +60,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ? user.employmentStatus!
         : 'Select status';
     _birthDate = user.birthDate;
-    if (user.monthlyIncome != null) {
-      _incomeController.text = _trimMoney(user.monthlyIncome!);
-    }
-    if (user.monthlyBudgetGoal != null) {
-      _budgetGoalController.text = _trimMoney(user.monthlyBudgetGoal!);
-    }
-  }
-
-  String _trimMoney(double value) {
-    if (value == value.roundToDouble()) return value.round().toString();
-    return value.toStringAsFixed(2);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _incomeController.dispose();
-    _budgetGoalController.dispose();
     super.dispose();
   }
 
@@ -162,9 +148,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not pick image. $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not pick image. $error')));
     } finally {
       if (mounted) setState(() => _pickingImage = false);
     }
@@ -190,19 +176,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         '${d.year}';
   }
 
-  double? _parseMoney(String raw) {
-    final cleaned = raw.trim().replaceAll(',', '');
-    if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
-  }
-
   Future<void> _save() async {
     if (_saving) return;
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your name.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter your name.')));
       return;
     }
 
@@ -213,28 +193,123 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         currency: _currency,
         employmentStatus: _employmentStatus,
         birthDate: _birthDate,
-        monthlyIncome: _parseMoney(_incomeController.text),
-        monthlyBudgetGoal: _parseMoney(_budgetGoalController.text),
         avatarBytes: _avatarBytes,
         avatarContentType: _avatarContentType ?? 'image/jpeg',
       );
       if (!mounted) return;
       if (!result.ok || result.user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message ?? 'Could not save profile.'),
-          ),
+          SnackBar(content: Text(result.message ?? 'Could not save profile.')),
         );
         return;
       }
       widget.onSaved(result.user!);
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile updated.')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _changePassword() async {
+    if (_saving) return;
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    var obscureNewPassword = true;
+    var obscureConfirmPassword = true;
+
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Change password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: newPasswordController,
+                obscureText: obscureNewPassword,
+                decoration: InputDecoration(
+                  labelText: 'New password',
+                  suffixIcon: IconButton(
+                    onPressed: () => setDialogState(
+                      () => obscureNewPassword = !obscureNewPassword,
+                    ),
+                    icon: Icon(
+                      obscureNewPassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPasswordController,
+                obscureText: obscureConfirmPassword,
+                decoration: InputDecoration(
+                  labelText: 'Confirm password',
+                  suffixIcon: IconButton(
+                    onPressed: () => setDialogState(
+                      () => obscureConfirmPassword = !obscureConfirmPassword,
+                    ),
+                    icon: Icon(
+                      obscureConfirmPassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Use at least 8 characters, starting with a capital letter and including a special character.',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = newPasswordController.text;
+                final validation = validatePassword(value);
+                if (!validation.ok) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(validation.message!)));
+                  return;
+                }
+                if (value != confirmPasswordController.text) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Passwords do not match.')),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Update password'),
+            ),
+          ],
+        ),
+      ),
+    );
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
+    if (password == null || !mounted) return;
+
+    setState(() => _saving = true);
+    final error = await AuthService.instance.updatePassword(password);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error ?? 'Password updated.')));
   }
 
   InputDecoration _input(String hint) {
@@ -359,8 +434,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             onChanged: _saving
                 ? null
                 : (value) => setState(
-                      () => _employmentStatus = value ?? _employmentStatus,
-                    ),
+                    () => _employmentStatus = value ?? _employmentStatus,
+                  ),
             decoration: _input('Select status'),
           ),
           const SizedBox(height: 14),
@@ -386,27 +461,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 14),
-          const Text(
-            'Monthly income',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _incomeController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _input('0.00'),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Monthly budget goal',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _budgetGoalController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _input('0.00'),
+          const SizedBox(height: 20),
+          OutlinedButton.icon(
+            onPressed: _saving ? null : _changePassword,
+            icon: const Icon(Icons.lock_outline),
+            label: const Text('Change password'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFFF7F20),
+              side: const BorderSide(color: Color(0xFFFF7F20)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           SizedBox(

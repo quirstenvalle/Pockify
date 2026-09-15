@@ -321,11 +321,29 @@ List<ChartPoint> weeklyBars(List<TransactionModel> txs) {
   ];
 }
 
-/// Last 6 calendar months of expense totals (demo fill for empty past months).
-List<ChartPoint> monthlyTrend(List<TransactionModel> txs) {
-  const demoBase = [6200.0, 7400.0, 5100.0, 8300.0, 6900.0];
+bool isAccountNew(DateTime? createdAt, List<TransactionModel> txs) {
+  if (txs.isNotEmpty) return false;
+  if (createdAt == null) return true;
+  return DateTime.now().difference(createdAt).inDays < 180;
+}
+
+String walletHealthLabel(int score, {required bool isNewUser}) {
+  if (isNewUser) return 'Fresh start';
+  return score >= 75
+      ? 'Excellent'
+      : score >= 60
+      ? 'Good'
+      : 'Needs attention';
+}
+
+/// Last 6 calendar months of actual expense totals.
+List<ChartPoint> monthlyTrend(
+  List<TransactionModel> txs, {
+  DateTime? createdAt,
+}) {
   final out = <ChartPoint>[];
   final now = DateTime.now();
+  final noHistory = txs.isEmpty || isAccountNew(createdAt, txs);
 
   for (var i = 5; i >= 0; i--) {
     final dt = DateTime(now.year, now.month - i, 1);
@@ -336,14 +354,8 @@ List<ChartPoint> monthlyTrend(List<TransactionModel> txs) {
           .where((x) => x.kind == TxKind.expense && x.date.startsWith(key))
           .toList(),
     );
-    final demoIndex = 5 - i;
     out.add(
-      ChartPoint(
-        label: _shortMonth(dt.month),
-        amount: amount > 0
-            ? amount
-            : (demoIndex < demoBase.length ? demoBase[demoIndex] : 0),
-      ),
+      ChartPoint(label: _shortMonth(dt.month), amount: noHistory ? 0 : amount),
     );
   }
   return out;
@@ -614,90 +626,7 @@ int healthScore(List<TransactionModel> txs, List<BudgetModel> budgets) {
   return score.clamp(0, 100);
 }
 
-final List<BudgetModel> SEED_BUDGETS = [
-  BudgetModel(id: 'b1', category: 'Food', limit: 5000),
-  BudgetModel(id: 'b2', category: 'Transportation', limit: 4000),
-  BudgetModel(id: 'b3', category: 'Grocery', limit: 3500),
-  BudgetModel(id: 'b4', category: 'Shopping', limit: 2000),
-  BudgetModel(id: 'b5', category: 'Coffee', limit: 600),
-  BudgetModel(id: 'b6', category: 'Entertainment', limit: 1200),
-];
-
-final List<GoalModel> SEED_GOALS = [
-  GoalModel(id: 'g1', title: 'Emergency fund', target: 50000, current: 23000),
-  GoalModel(id: 'g2', title: 'Travel fund', target: 30000, current: 14500),
-  GoalModel(id: 'g3', title: 'Birthday gift', target: 8000, current: 3500),
-];
-
-List<TransactionModel> createSeedTransactions() {
-  final now = DateTime.now();
-  TransactionModel tx(
-    String id,
-    TxKind kind,
-    double amount,
-    String category,
-    int offset, {
-    String? note,
-    bool favorite = false,
-  }) {
-    final date = now.subtract(Duration(days: offset));
-    return TransactionModel(
-      id: id,
-      kind: kind,
-      amount: amount,
-      category: category,
-      note: note,
-      date: date.toIso8601String().substring(0, 10),
-      method: kind == TxKind.income ? 'Bank' : 'Cash',
-      favorite: favorite,
-    );
-  }
-
-  return [
-    tx('seed-1', TxKind.income, 20000, 'Salary', 12, note: 'December salary'),
-    tx('seed-2', TxKind.income, 3500, 'Freelance', 8, note: 'Logo design'),
-    tx(
-      'seed-3',
-      TxKind.expense,
-      80,
-      'Transportation',
-      0,
-      note: 'Bus fare',
-      favorite: true,
-    ),
-    tx('seed-4', TxKind.expense, 900, 'Grocery', 0, note: 'Weekly groceries'),
-    tx('seed-5', TxKind.expense, 1500, 'Bills', 1, note: 'Electricity'),
-    tx('seed-6', TxKind.expense, 340, 'Healthcare', 2, note: 'Vitamins'),
-    tx('seed-7', TxKind.expense, 220, 'Education', 3, note: 'Notebook + pens'),
-    tx('seed-8', TxKind.expense, 130, 'Transportation', 4, note: 'Grab ride'),
-    tx('seed-9', TxKind.expense, 720, 'Grocery', 5, note: 'Pantry restock'),
-    tx('seed-10', TxKind.expense, 250, 'Food', 6, note: 'Lunch with team'),
-    tx('seed-11', TxKind.expense, 95, 'Coffee', 6, note: 'Cold brew'),
-    tx('seed-12', TxKind.expense, 480, 'Entertainment', 7, note: 'Movie night'),
-    tx(
-      'seed-13',
-      TxKind.expense,
-      120,
-      'Food',
-      8,
-      note: 'Rice bowl',
-      favorite: true,
-    ),
-    tx('seed-14', TxKind.expense, 65, 'Coffee', 8, note: 'Latte'),
-    tx('seed-15', TxKind.expense, 1800, 'Shopping', 9, note: 'New sneakers'),
-    tx('seed-16', TxKind.expense, 260, 'Food', 11, note: 'Dinner out'),
-    tx('seed-17', TxKind.expense, 60, 'Coffee', 12, note: 'Americano'),
-    tx(
-      'seed-18',
-      TxKind.expense,
-      2000,
-      'Savings',
-      12,
-      note: 'Monthly set-aside',
-    ),
-    tx('seed-19', TxKind.expense, 450, 'Bills', 15, note: 'Internet top-up'),
-    tx('seed-20', TxKind.expense, 310, 'Pet Expenses', 18, note: 'Dog food'),
-  ];
-}
-
-final List<TransactionModel> SEED_TRANSACTIONS = createSeedTransactions();
+// Kept as empty test fixtures; the app never loads sample finance data.
+final List<BudgetModel> SEED_BUDGETS = <BudgetModel>[];
+final List<GoalModel> SEED_GOALS = <GoalModel>[];
+final List<TransactionModel> SEED_TRANSACTIONS = <TransactionModel>[];

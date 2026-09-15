@@ -1291,15 +1291,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   Future<void> _loadFinanceData() async {
     if (!ApiConfig.useSupabase) {
       setState(() {
-        _transactions
-          ..clear()
-          ..addAll(SEED_TRANSACTIONS);
-        _budgets
-          ..clear()
-          ..addAll(SEED_BUDGETS);
-        _goals
-          ..clear()
-          ..addAll(SEED_GOALS);
+        _transactions.clear();
+        _budgets.clear();
+        _goals.clear();
         _loadingFinance = false;
       });
       await _evaluateDailyExpenseReminder();
@@ -1877,6 +1871,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     TxKind kind = TxKind.expense;
     String category = 'Food';
     final categories = CATEGORIES.map((c) => c.name).toList();
+    final isNewUser = isAccountNew(_user?.createdAt, _transactions);
 
     showDialog(
       context: context,
@@ -1974,30 +1969,32 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                           Wrap(
                             spacing: 8,
                             children: [
-                              ActionChip(
-                                avatar: const Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.amber,
+                              if (!isNewUser) ...[
+                                ActionChip(
+                                  avatar: const Icon(
+                                    Icons.star,
+                                    size: 14,
+                                    color: Colors.amber,
+                                  ),
+                                  label: const Text('Bus fare · ₱80'),
+                                  onPressed: () {
+                                    amountController.text = '80';
+                                    noteController.text = 'Bus fare';
+                                  },
                                 ),
-                                label: const Text('Bus fare · ₱80'),
-                                onPressed: () {
-                                  amountController.text = '80';
-                                  noteController.text = 'Bus fare';
-                                },
-                              ),
-                              ActionChip(
-                                avatar: const Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.amber,
+                                ActionChip(
+                                  avatar: const Icon(
+                                    Icons.star,
+                                    size: 14,
+                                    color: Colors.amber,
+                                  ),
+                                  label: const Text('Rice bowl · ₱120'),
+                                  onPressed: () {
+                                    amountController.text = '120';
+                                    noteController.text = 'Rice bowl';
+                                  },
                                 ),
-                                label: const Text('Rice bowl · ₱120'),
-                                onPressed: () {
-                                  amountController.text = '120';
-                                  noteController.text = 'Rice bowl';
-                                },
-                              ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -2322,11 +2319,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        score >= 75
-                            ? 'Healthy'
-                            : score >= 60
-                            ? 'Fair'
-                            : 'Needs Improvement',
+                        walletHealthLabel(
+                          score,
+                          isNewUser: isAccountNew(
+                            _user?.createdAt,
+                            _transactions,
+                          ),
+                        ),
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -2499,6 +2498,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
+        if (_budgets.isEmpty)
+          const Card(
+            elevation: 0,
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  'No progress',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+          ),
         ..._budgets.map((budget) {
           final used = spent[budget.category] ?? 0;
           final pct = ((used / budget.limit) * 100).clamp(0, 100);
@@ -2552,79 +2564,93 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
-        Card(
-          elevation: 0,
-          child: Column(
-            children: recent
-                .take(5)
-                .map(
-                  (tx) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            color: Colors.grey.shade100,
+        if (recent.isEmpty)
+          const Card(
+            elevation: 0,
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: Text(
+                  'No transactions',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+          )
+        else
+          Card(
+            elevation: 0,
+            child: Column(
+              children: recent
+                  .take(5)
+                  .map(
+                    (tx) => Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              color: Colors.grey.shade100,
+                            ),
+                            child: Center(
+                              child: CategoryIcon(tx.category, size: 18),
+                            ),
                           ),
-                          child: Center(
-                            child: CategoryIcon(tx.category, size: 18),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  tx.category,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  tx.note ?? tx.date,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                tx.category,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
+                                '${tx.kind == TxKind.expense ? '-' : '+'}${peso(tx.amount)}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: tx.kind == TxKind.expense
+                                      ? Colors.red
+                                      : Colors.green,
                                 ),
                               ),
                               Text(
-                                tx.note ?? tx.date,
+                                tx.date.substring(5),
                                 style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   color: Colors.grey,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${tx.kind == TxKind.expense ? '-' : '+'}${peso(tx.amount)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: tx.kind == TxKind.expense
-                                    ? Colors.red
-                                    : Colors.green,
-                              ),
-                            ),
-                            Text(
-                              tx.date.substring(5),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
+                  )
+                  .toList(),
+            ),
           ),
-        ),
         if (_showDailyInsight && dailyInsight != null) ...[
           const SizedBox(height: 16),
           Card(
@@ -3146,7 +3172,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
         .where((tx) => tx.kind == TxKind.expense && isThisMonth(tx.date))
         .toList();
     final bars = weeklyBars(_transactions);
-    final trend = monthlyTrend(_transactions);
+    final trend = monthlyTrend(_transactions, createdAt: _user?.createdAt);
     final totalSpent = totals.expenses <= 0 ? 1.0 : totals.expenses;
 
     return ListView(
@@ -3296,7 +3322,13 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 12),
-                TrendSparkline(points: trend),
+                if (_transactions.isEmpty)
+                  const Text(
+                    'No transaction data yet.',
+                    style: TextStyle(color: Colors.grey),
+                  )
+                else
+                  TrendSparkline(points: trend),
               ],
             ),
           ),
@@ -3387,11 +3419,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final score = healthScore(_transactions, _budgets);
     final streak = essentialStreak(_transactions);
     final alerts = _activeAlerts;
-    final healthLabel = score >= 75
-        ? 'Excellent'
-        : score >= 60
-        ? 'Good'
-        : 'Needs attention';
+    final healthLabel = walletHealthLabel(
+      score,
+      isNewUser: isAccountNew(_user?.createdAt, _transactions),
+    );
     final email = _user?.email ?? '';
     final currency = _user?.currency;
     final employment = _user?.employmentStatus;
