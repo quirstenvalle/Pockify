@@ -21,6 +21,7 @@ class SupabaseAuthClient {
     required String email,
     required String password,
     String? currency,
+    String? country,
     String? employmentStatus,
     DateTime? birthDate,
     double? monthlyIncome,
@@ -31,6 +32,9 @@ class SupabaseAuthClient {
       final cleanCurrency = (currency == null || currency == 'Select currency')
           ? null
           : currency;
+      final cleanCountry = (country == null || country.trim().isEmpty)
+          ? null
+          : country.trim();
       final cleanEmployment =
           (employmentStatus == null || employmentStatus == 'Select status')
           ? null
@@ -47,9 +51,10 @@ class SupabaseAuthClient {
         data: {
           'full_name': name.trim(),
           'name': name.trim(),
-          if (cleanCurrency != null) 'currency': cleanCurrency,
-          if (cleanEmployment != null) 'employment_status': cleanEmployment,
-          if (birthDateIso != null) 'birth_date': birthDateIso,
+          'currency': ?cleanCurrency,
+          'country': ?cleanCountry,
+          'employment_status': ?cleanEmployment,
+          'birth_date': ?birthDateIso,
           if (monthlyIncome != null) 'monthly_income': monthlyIncome.toString(),
           if (monthlyBudgetGoal != null)
             'monthly_budget_goal': monthlyBudgetGoal.toString(),
@@ -98,6 +103,7 @@ class SupabaseAuthClient {
       final mapped = _mapUser(user, profile: null).copyWith(
         emailVerified: true,
         currency: cleanCurrency,
+        country: cleanCountry,
         employmentStatus: cleanEmployment,
         birthDate: birthDate,
         monthlyIncome: monthlyIncome,
@@ -494,6 +500,7 @@ class SupabaseAuthClient {
         'full_name': user.name,
         'email': user.email,
         'currency': user.currency,
+        'country': user.country,
         'employment_status': user.employmentStatus,
         'birth_date': user.birthDate == null
             ? null
@@ -504,6 +511,10 @@ class SupabaseAuthClient {
         'monthly_budget_goal': user.monthlyBudgetGoal,
         'avatar_url': user.avatarUrl,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
+        // onboarding_completed intentionally omitted: this upsert also runs
+        // on every login/session refresh, and must never clobber the flag
+        // back to false. ProfileRepository.completeOnboarding is the only
+        // writer of that column.
       });
     } catch (_) {}
   }
@@ -551,6 +562,8 @@ class SupabaseAuthClient {
               false),
       currency:
           (profile?['currency'] as String?) ?? meta['currency'] as String?,
+      country:
+          (profile?['country'] as String?) ?? meta['country'] as String?,
       employmentStatus:
           (profile?['employment_status'] as String?) ??
           meta['employment_status'] as String?,
@@ -562,6 +575,13 @@ class SupabaseAuthClient {
           asDouble(profile?['monthly_budget_goal']) ??
           asDouble(meta['monthly_budget_goal']),
       avatarUrl: avatarUrl,
+      onboardingCompleted: profile?['onboarding_completed'] as bool? ?? false,
+      incomeSource: profile?['income_source'] as String?,
+      incomeFrequency: profile?['income_frequency'] as String?,
+      incomeAmount: asDouble(profile?['income_amount']),
+      budgetObjectives: (profile?['budget_objectives'] as List?)
+          ?.map((item) => '$item')
+          .toList(),
       createdAt: DateTime.tryParse(user.createdAt) ?? DateTime.now(),
     );
   }

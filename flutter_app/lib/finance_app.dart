@@ -6,12 +6,14 @@ import 'api/finance_repository.dart';
 import 'auth/auth_models.dart';
 import 'auth/auth_service.dart';
 import 'auth_validation.dart';
+import 'data/countries.dart';
 import 'finance_models.dart';
 import 'form_validation.dart';
 import 'responsive.dart';
 import 'screens/biometric_lock_screen.dart';
 import 'screens/edit_profile_screen.dart';
 import 'screens/email_verification_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/biometric_service.dart';
 import 'services/notification_features.dart';
 import 'settings/app_settings.dart';
@@ -19,6 +21,7 @@ import 'settings/settings_service.dart';
 import 'theme/app_theme.dart';
 import 'widgets/category_icon.dart';
 import 'widgets/charts.dart';
+import 'widgets/country_picker.dart';
 import 'widgets/profile_avatar.dart';
 
 class FinanceApp extends StatefulWidget {
@@ -31,6 +34,8 @@ class FinanceApp extends StatefulWidget {
 class _FinanceAppState extends State<FinanceApp> {
   bool _booting = true;
   bool _authenticated = false;
+  bool _needsOnboarding = false;
+  AuthUser? _onboardingUser;
   String? _pendingVerificationEmail;
   String? _pendingDemoCode;
   String? _pendingPassword;
@@ -59,22 +64,37 @@ class _FinanceAppState extends State<FinanceApp> {
   }
 
   void _onRemoteAuthenticated() {
-    if (!mounted) return;
-    setState(() {
-      _authenticated = true;
-      _booting = false;
-      _pendingVerificationEmail = null;
-      _pendingDemoCode = null;
-      _pendingPassword = null;
-    });
+    _completeAuth(alsoStopBooting: true);
   }
 
   Future<void> _restoreSession() async {
+    await _completeAuth(alsoStopBooting: true);
+  }
+
+  /// Re-fetches the current user and routes to onboarding (first login),
+  /// the authenticated home screen, or signed-out state accordingly.
+  Future<void> _completeAuth({bool alsoStopBooting = false}) async {
     final user = await AuthService.instance.restoreSession();
     if (!mounted) return;
     setState(() {
-      _authenticated = user != null;
-      _booting = false;
+      _pendingVerificationEmail = null;
+      _pendingDemoCode = null;
+      _pendingPassword = null;
+      if (user == null) {
+        _authenticated = false;
+        _needsOnboarding = false;
+        _onboardingUser = null;
+      } else if (!user.onboardingCompleted) {
+        _onboardingUser = user;
+        _needsOnboarding = true;
+        _authenticated = false;
+      } else {
+        setActiveCurrency(user.currency);
+        _authenticated = true;
+        _needsOnboarding = false;
+        _onboardingUser = null;
+      }
+      if (alsoStopBooting) _booting = false;
     });
   }
 
@@ -83,6 +103,8 @@ class _FinanceAppState extends State<FinanceApp> {
     if (!mounted) return;
     setState(() {
       _authenticated = false;
+      _needsOnboarding = false;
+      _onboardingUser = null;
       _pendingVerificationEmail = null;
       _pendingDemoCode = null;
       _pendingPassword = null;
@@ -104,9 +126,19 @@ class _FinanceAppState extends State<FinanceApp> {
             )
           : _passwordRecovery
           ? PasswordResetScreen(
-              onCompleted: () => setState(() {
-                _passwordRecovery = false;
+              onCompleted: () {
+                setState(() => _passwordRecovery = false);
+                _completeAuth();
+              },
+            )
+          : _needsOnboarding && _onboardingUser != null
+          ? OnboardingScreen(
+              user: _onboardingUser!,
+              onComplete: () => setState(() {
+                _needsOnboarding = false;
                 _authenticated = true;
+                setActiveCurrency(_onboardingUser!.currency);
+                _onboardingUser = null;
               }),
             )
           : _authenticated
@@ -116,12 +148,7 @@ class _FinanceAppState extends State<FinanceApp> {
               email: _pendingVerificationEmail!,
               password: _pendingPassword,
               initialDemoCode: _pendingDemoCode,
-              onVerified: () => setState(() {
-                _authenticated = true;
-                _pendingVerificationEmail = null;
-                _pendingDemoCode = null;
-                _pendingPassword = null;
-              }),
+              onVerified: _completeAuth,
               onBackToAuth: () => setState(() {
                 _pendingVerificationEmail = null;
                 _pendingDemoCode = null;
@@ -129,7 +156,7 @@ class _FinanceAppState extends State<FinanceApp> {
               }),
             )
           : AuthScreen(
-              onAuthenticated: () => setState(() => _authenticated = true),
+              onAuthenticated: _completeAuth,
               onNeedsVerification: (email, demoCode, password) => setState(() {
                 _pendingVerificationEmail = email;
                 _pendingDemoCode = demoCode;
@@ -268,9 +295,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
-  final _incomeController = TextEditingController();
-  final _budgetGoalController = TextEditingController();
-  String _currency = 'Select currency';
+  String? _country;
   String _employmentStatus = 'Select status';
   DateTime? _birthDate;
   final _auth = AuthService.instance;
@@ -281,9 +306,13 @@ class _AuthScreenState extends State<AuthScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
-    _incomeController.dispose();
-    _budgetGoalController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCountry() async {
+    final selected = await showCountryPicker(context, initial: _country);
+    if (selected == null || !mounted) return;
+    setState(() => _country = selected);
   }
 
   String get _birthDateLabel {
@@ -330,7 +359,7 @@ class _AuthScreenState extends State<AuthScreen> {
             email: _emailController.text,
             password: _passwordController.text,
             confirmPassword: _confirmController.text,
-            currency: _currency,
+            country: _country,
             employmentStatus: _employmentStatus,
             birthDate: _birthDate,
           );
@@ -342,12 +371,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
     setState(() => _busy = true);
     try {
-      double? parseMoney(String raw) {
-        final cleaned = raw.trim().replaceAll(RegExp(r'[^0-9.]'), '');
-        if (cleaned.isEmpty) return null;
-        return double.tryParse(cleaned);
-      }
-
       final authResult = _loginMode
           ? await _auth.login(
               email: _emailController.text,
@@ -357,11 +380,12 @@ class _AuthScreenState extends State<AuthScreen> {
               name: _nameController.text,
               email: _emailController.text,
               password: _passwordController.text,
-              currency: _currency,
+              currency: _country == null
+                  ? null
+                  : currencyCodeForCountry(_country!),
+              country: _country,
               employmentStatus: _employmentStatus,
               birthDate: _birthDate,
-              monthlyIncome: parseMoney(_incomeController.text),
-              monthlyBudgetGoal: parseMoney(_budgetGoalController.text),
             );
 
       if (!mounted) return;
@@ -627,51 +651,51 @@ class _AuthScreenState extends State<AuthScreen> {
                           ],
                           if (!_loginMode) ...[
                             const Text(
-                              'Monthly Income',
+                              'Country / Region',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             const SizedBox(height: 5),
-                            TextField(
-                              controller: _incomeController,
-                              keyboardType: TextInputType.number,
-                              decoration: _authInput(null, 'e.g. 5000'),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Preferred Currency',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
+                            InkWell(
+                              onTap: _pickCountry,
+                              borderRadius: BorderRadius.circular(6),
+                              child: InputDecorator(
+                                decoration: _authInput(
+                                  Icons.public,
+                                  'Select country',
+                                ).copyWith(
+                                  suffixIcon: const Icon(
+                                    Icons.expand_more,
+                                    size: 18,
+                                  ),
+                                ),
+                                child: Text(
+                                  _country ?? 'Select country',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: _country == null
+                                        ? const Color(0xFF9A958C)
+                                        : const Color(0xFF1F1F1F),
+                                  ),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 5),
-                            DropdownButtonFormField<String>(
-                              initialValue: _currency,
-                              items:
-                                  const [
-                                        'Select currency',
-                                        'PHP (₱)',
-                                        'USD (\$)',
-                                        'EUR (€)',
-                                      ]
-                                      .map(
-                                        (item) => DropdownMenuItem(
-                                          value: item,
-                                          child: Text(item),
-                                        ),
-                                      )
-                                      .toList(),
-                              onChanged: (value) => setState(
-                                () => _currency = value ?? _currency,
+                            if (_country != null) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                'Currency: ${currencySymbolForCurrency(currencyCodeForCountry(_country!))} '
+                                '${currencyCodeForCountry(_country!)}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFF6D6962),
+                                ),
                               ),
-                              decoration: _authInput(null, 'Select currency'),
-                            ),
+                            ],
                             const SizedBox(height: 12),
                             const Text(
-                              'Birth Date',
+                              'Birthdate',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -702,21 +726,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 12),
                             const Text(
-                              'Monthly Budget Goal',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            TextField(
-                              controller: _budgetGoalController,
-                              keyboardType: TextInputType.number,
-                              decoration: _authInput(null, '\$ 0.00'),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Employment Status',
+                              'User Type / Employment Status',
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
@@ -3070,28 +3080,46 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                         goal.title,
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
-                      Text(
-                        '${(goal.current / goal.target * 100).round()}%',
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
+                      if (!goal.isRecurring)
+                        Text(
+                          '${(goal.current / goal.target * 100).round()}%',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(
-                    value: (goal.current / goal.target).clamp(0.0, 1.0),
-                    minHeight: 9,
-                    borderRadius: BorderRadius.circular(999),
-                    color: const Color(0xFF22AE98),
-                    backgroundColor: Colors.grey.shade200,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${peso(goal.current)} / ${peso(goal.target)}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
+                  if (goal.isRecurring) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '${peso(goal.recurringAmount ?? 0)} every '
+                      '${(goal.recurringFrequency ?? 'month').toLowerCase()}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF6D6962),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Saved so far: ${peso(goal.current)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      value: (goal.current / goal.target).clamp(0.0, 1.0),
+                      minHeight: 9,
+                      borderRadius: BorderRadius.circular(999),
+                      color: const Color(0xFF22AE98),
+                      backgroundColor: Colors.grey.shade200,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${peso(goal.current)} / ${peso(goal.target)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(

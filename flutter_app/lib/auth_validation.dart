@@ -58,7 +58,7 @@ ValidationResult validateSignup({
   required String email,
   required String password,
   required String confirmPassword,
-  String currency = 'Select currency',
+  String? country,
   String employmentStatus = 'Select status',
   DateTime? birthDate,
 }) {
@@ -75,8 +75,8 @@ ValidationResult validateSignup({
   if (password != confirmPassword) {
     return const ValidationResult.invalid('Passwords do not match.');
   }
-  if (currency == 'Select currency') {
-    return const ValidationResult.invalid('Select your preferred currency.');
+  if (country == null || country.trim().isEmpty) {
+    return const ValidationResult.invalid('Select your country/region.');
   }
   if (birthDate == null) {
     return const ValidationResult.invalid('Select your birth date.');

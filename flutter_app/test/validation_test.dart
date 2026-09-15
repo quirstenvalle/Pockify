@@ -27,7 +27,7 @@ void main() {
         email: 'mark@example.com',
         password: 'Password1!',
         confirmPassword: 'Password2!',
-        currency: 'PHP (₱)',
+        country: 'Philippines',
         employmentStatus: 'Student',
       );
 

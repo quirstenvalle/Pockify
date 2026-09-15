@@ -6,11 +6,17 @@ class AuthUser {
   final String passwordSalt;
   final bool emailVerified;
   final String? currency;
+  final String? country;
   final String? employmentStatus;
   final DateTime? birthDate;
   final double? monthlyIncome;
   final double? monthlyBudgetGoal;
   final String? avatarUrl;
+  final bool onboardingCompleted;
+  final String? incomeSource;
+  final String? incomeFrequency;
+  final double? incomeAmount;
+  final List<String>? budgetObjectives;
   final DateTime createdAt;
 
   const AuthUser({
@@ -21,11 +27,17 @@ class AuthUser {
     required this.passwordSalt,
     required this.emailVerified,
     this.currency,
+    this.country,
     this.employmentStatus,
     this.birthDate,
     this.monthlyIncome,
     this.monthlyBudgetGoal,
     this.avatarUrl,
+    this.onboardingCompleted = false,
+    this.incomeSource,
+    this.incomeFrequency,
+    this.incomeAmount,
+    this.budgetObjectives,
     required this.createdAt,
   });
 
@@ -36,12 +48,18 @@ class AuthUser {
     String? passwordSalt,
     bool? emailVerified,
     String? currency,
+    String? country,
     String? employmentStatus,
     DateTime? birthDate,
     double? monthlyIncome,
     double? monthlyBudgetGoal,
     String? avatarUrl,
     bool clearAvatar = false,
+    bool? onboardingCompleted,
+    String? incomeSource,
+    String? incomeFrequency,
+    double? incomeAmount,
+    List<String>? budgetObjectives,
   }) {
     return AuthUser(
       id: id,
@@ -51,11 +69,17 @@ class AuthUser {
       passwordSalt: passwordSalt ?? this.passwordSalt,
       emailVerified: emailVerified ?? this.emailVerified,
       currency: currency ?? this.currency,
+      country: country ?? this.country,
       employmentStatus: employmentStatus ?? this.employmentStatus,
       birthDate: birthDate ?? this.birthDate,
       monthlyIncome: monthlyIncome ?? this.monthlyIncome,
       monthlyBudgetGoal: monthlyBudgetGoal ?? this.monthlyBudgetGoal,
       avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      incomeSource: incomeSource ?? this.incomeSource,
+      incomeFrequency: incomeFrequency ?? this.incomeFrequency,
+      incomeAmount: incomeAmount ?? this.incomeAmount,
+      budgetObjectives: budgetObjectives ?? this.budgetObjectives,
       createdAt: createdAt,
     );
   }
@@ -68,11 +92,17 @@ class AuthUser {
     'passwordSalt': passwordSalt,
     'emailVerified': emailVerified,
     'currency': currency,
+    'country': country,
     'employmentStatus': employmentStatus,
     'birthDate': birthDate?.toIso8601String(),
     'monthlyIncome': monthlyIncome,
     'monthlyBudgetGoal': monthlyBudgetGoal,
     'avatarUrl': avatarUrl,
+    'onboardingCompleted': onboardingCompleted,
+    'incomeSource': incomeSource,
+    'incomeFrequency': incomeFrequency,
+    'incomeAmount': incomeAmount,
+    'budgetObjectives': budgetObjectives,
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -84,6 +114,7 @@ class AuthUser {
     passwordSalt: json['passwordSalt'] as String? ?? '',
     emailVerified: json['emailVerified'] as bool? ?? false,
     currency: json['currency'] as String?,
+    country: json['country'] as String?,
     employmentStatus: json['employmentStatus'] as String?,
     birthDate: json['birthDate'] == null
         ? null
@@ -91,6 +122,13 @@ class AuthUser {
     monthlyIncome: (json['monthlyIncome'] as num?)?.toDouble(),
     monthlyBudgetGoal: (json['monthlyBudgetGoal'] as num?)?.toDouble(),
     avatarUrl: json['avatarUrl'] as String?,
+    onboardingCompleted: json['onboardingCompleted'] as bool? ?? false,
+    incomeSource: json['incomeSource'] as String?,
+    incomeFrequency: json['incomeFrequency'] as String?,
+    incomeAmount: (json['incomeAmount'] as num?)?.toDouble(),
+    budgetObjectives: (json['budgetObjectives'] as List?)
+        ?.map((item) => '$item')
+        .toList(),
     createdAt: DateTime.parse(
       json['createdAt'] as String? ?? DateTime.now().toIso8601String(),
     ),
@@ -104,6 +142,7 @@ class AuthUser {
     passwordSalt: '',
     emailVerified: json['email_verified'] as bool? ?? false,
     currency: json['currency'] as String?,
+    country: json['country'] as String?,
     employmentStatus: json['employment_status'] as String?,
     birthDate: json['birth_date'] == null
         ? null
@@ -111,6 +150,13 @@ class AuthUser {
     monthlyIncome: (json['monthly_income'] as num?)?.toDouble(),
     monthlyBudgetGoal: (json['monthly_budget_goal'] as num?)?.toDouble(),
     avatarUrl: json['avatar_url'] as String?,
+    onboardingCompleted: json['onboarding_completed'] as bool? ?? false,
+    incomeSource: json['income_source'] as String?,
+    incomeFrequency: json['income_frequency'] as String?,
+    incomeAmount: (json['income_amount'] as num?)?.toDouble(),
+    budgetObjectives: (json['budget_objectives'] as List?)
+        ?.map((item) => '$item')
+        .toList(),
     createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
         DateTime.now(),
   );
@@ -121,6 +167,7 @@ class PendingSignup {
   final String email;
   final String password;
   final String? currency;
+  final String? country;
   final String? employmentStatus;
   final DateTime? birthDate;
   final double? monthlyIncome;
@@ -131,6 +178,7 @@ class PendingSignup {
     required this.email,
     required this.password,
     this.currency,
+    this.country,
     this.employmentStatus,
     this.birthDate,
     this.monthlyIncome,
@@ -147,6 +195,7 @@ class PendingSignup {
       email: email ?? this.email,
       password: password ?? this.password,
       currency: currency,
+      country: country,
       employmentStatus: employmentStatus,
       birthDate: birthDate,
       monthlyIncome: monthlyIncome,
@@ -159,6 +208,7 @@ class PendingSignup {
     'email': email,
     'password': password,
     'currency': currency,
+    'country': country,
     'employmentStatus': employmentStatus,
     'birthDate': birthDate?.toIso8601String(),
     'monthlyIncome': monthlyIncome,
@@ -170,6 +220,7 @@ class PendingSignup {
     email: (json['email'] as String? ?? '').toLowerCase(),
     password: json['password'] as String? ?? '',
     currency: json['currency'] as String?,
+    country: json['country'] as String?,
     employmentStatus: json['employmentStatus'] as String?,
     birthDate: json['birthDate'] == null
         ? null

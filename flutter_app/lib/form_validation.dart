@@ -113,10 +113,16 @@ List<TransactionModel> filterTransactions(
 }
 
 GoalModel contributeToGoal(GoalModel goal, {required double amount}) {
+  final updatedCurrent = goal.target > 0
+      ? (goal.current + amount).clamp(0, goal.target)
+      : (goal.current + amount).clamp(0, double.infinity);
   return GoalModel(
     id: goal.id,
     title: goal.title,
     target: goal.target,
-    current: (goal.current + amount).clamp(0, goal.target),
+    current: updatedCurrent.toDouble(),
+    isRecurring: goal.isRecurring,
+    recurringAmount: goal.recurringAmount,
+    recurringFrequency: goal.recurringFrequency,
   );
 }

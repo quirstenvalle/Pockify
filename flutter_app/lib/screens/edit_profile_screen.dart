@@ -5,6 +5,9 @@ import 'package:image_picker/image_picker.dart';
 
 import '../auth/auth_models.dart';
 import '../auth/auth_service.dart';
+import '../data/countries.dart';
+import '../finance_models.dart' show setActiveCurrency;
+import '../widgets/country_picker.dart';
 import '../widgets/profile_avatar.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -26,20 +29,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _incomeController = TextEditingController();
   final _budgetGoalController = TextEditingController();
 
-  late String _currency;
+  String? _country;
   late String _employmentStatus;
   DateTime? _birthDate;
   Uint8List? _avatarBytes;
   String? _avatarContentType;
   bool _saving = false;
   bool _pickingImage = false;
-
-  static const _currencies = [
-    'Select currency',
-    'PHP (₱)',
-    'USD (\$)',
-    'EUR (€)',
-  ];
 
   static const _employmentOptions = [
     'Select status',
@@ -54,9 +50,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     final user = widget.user;
     _nameController.text = user.name;
-    _currency = _currencies.contains(user.currency)
-        ? user.currency!
-        : 'Select currency';
+    _country = user.country;
     _employmentStatus = _employmentOptions.contains(user.employmentStatus)
         ? user.employmentStatus!
         : 'Select status';
@@ -67,6 +61,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (user.monthlyBudgetGoal != null) {
       _budgetGoalController.text = _trimMoney(user.monthlyBudgetGoal!);
     }
+  }
+
+  Future<void> _pickCountry() async {
+    final selected = await showCountryPicker(context, initial: _country);
+    if (selected == null || !mounted) return;
+    setState(() => _country = selected);
   }
 
   String _trimMoney(double value) {
@@ -210,7 +210,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       final result = await AuthService.instance.updateProfile(
         name: name,
-        currency: _currency,
+        currency: _country == null ? null : currencyCodeForCountry(_country!),
+        country: _country,
         employmentStatus: _employmentStatus,
         birthDate: _birthDate,
         monthlyIncome: _parseMoney(_incomeController.text),
@@ -227,6 +228,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         );
         return;
       }
+      setActiveCurrency(result.user!.currency);
       widget.onSaved(result.user!);
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -331,20 +333,35 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Preferred currency',
+            'Country / Region',
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: _currency,
-            items: _currencies
-                .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-                .toList(),
-            onChanged: _saving
-                ? null
-                : (value) => setState(() => _currency = value ?? _currency),
-            decoration: _input('Select currency'),
+          InkWell(
+            onTap: _saving ? null : _pickCountry,
+            borderRadius: BorderRadius.circular(16),
+            child: InputDecorator(
+              decoration: _input('Select country').copyWith(
+                suffixIcon: const Icon(Icons.expand_more, size: 18),
+              ),
+              child: Text(
+                _country ?? 'Select country',
+                style: TextStyle(
+                  color: _country == null
+                      ? const Color(0xFF9A958C)
+                      : const Color(0xFF1F1F1F),
+                ),
+              ),
+            ),
           ),
+          if (_country != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Currency: ${currencySymbolForCurrency(currencyCodeForCountry(_country!))} '
+              '${currencyCodeForCountry(_country!)}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF77736C)),
+            ),
+          ],
           const SizedBox(height: 14),
           const Text(
             'Employment status',

@@ -22,7 +22,11 @@ class LaravelAuthClient {
     required String email,
     required String password,
     String? currency,
+    String? country,
     String? employmentStatus,
+    DateTime? birthDate,
+    double? monthlyIncome,
+    double? monthlyBudgetGoal,
   }) async {
     return _send(
       'POST',
@@ -31,8 +35,9 @@ class LaravelAuthClient {
         'name': name,
         'email': email,
         'password': password,
-        if (currency != null) 'currency': currency,
-        if (employmentStatus != null) 'employment_status': employmentStatus,
+        'currency': ?currency,
+        'country': ?country,
+        'employment_status': ?employmentStatus,
       },
       fallbackRequiresVerification: true,
     );

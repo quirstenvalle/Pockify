@@ -1,3 +1,5 @@
+import 'data/countries.dart';
+
 enum TxKind { income, expense }
 
 class TransactionModel {
@@ -115,8 +117,8 @@ class BudgetModel {
     required this.id,
     required this.category,
     required this.limit,
-    String? date,
-  }) : _date = date;
+    this._date,
+  });
 
   Map<String, dynamic> toSupabase() => {
     'id': id,
@@ -141,12 +143,18 @@ class GoalModel {
   final String title;
   final double target;
   final double current;
+  final bool isRecurring;
+  final double? recurringAmount;
+  final String? recurringFrequency;
 
   GoalModel({
     required this.id,
     required this.title,
     required this.target,
     required this.current,
+    this.isRecurring = false,
+    this.recurringAmount,
+    this.recurringFrequency,
   });
 
   Map<String, dynamic> toSupabase() => {
@@ -154,6 +162,9 @@ class GoalModel {
     'title': title,
     'target_amount': target,
     'current_amount': current,
+    'is_recurring': isRecurring,
+    'recurring_amount': recurringAmount,
+    'recurring_frequency': recurringFrequency,
   };
 
   factory GoalModel.fromSupabase(Map<String, dynamic> json) => GoalModel(
@@ -161,10 +172,22 @@ class GoalModel {
     title: json['title'] as String,
     target: (json['target_amount'] as num).toDouble(),
     current: (json['current_amount'] as num).toDouble(),
+    isRecurring: json['is_recurring'] as bool? ?? false,
+    recurringAmount: (json['recurring_amount'] as num?)?.toDouble(),
+    recurringFrequency: json['recurring_frequency'] as String?,
   );
 }
 
-String peso(num value) => '₱${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}';
+String _activeCurrencySymbol = '₱';
+
+/// Sets the currency symbol used by [peso] app-wide, derived from the
+/// signed-in user's country/currency selection.
+void setActiveCurrency(String? currencyValue) {
+  _activeCurrencySymbol = currencySymbolForCurrency(currencyValue);
+}
+
+String peso(num value) =>
+    '$_activeCurrencySymbol${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}';
 
 const List<CategoryModel> CATEGORIES = [
   CategoryModel(
