@@ -291,6 +291,8 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   bool _loginMode = true;
   bool _busy = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -785,10 +787,21 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 5),
                           TextField(
                             controller: _passwordController,
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             decoration: _authInput(
                               Icons.lock_outline,
                               '••••••••',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_outlined
+                                      : Icons.visibility_off_outlined,
+                                  size: 18,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
+                              ),
                             ),
                           ),
                           if (!_loginMode) ...[
@@ -805,10 +818,22 @@ class _AuthScreenState extends State<AuthScreen> {
                             const SizedBox(height: 14),
                             TextField(
                               controller: _confirmController,
-                              obscureText: true,
+                              obscureText: _obscureConfirmPassword,
                               decoration: _authInput(
                                 Icons.lock_outline,
                                 'Confirm password',
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    size: 18,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscureConfirmPassword =
+                                        !_obscureConfirmPassword,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -931,10 +956,15 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  InputDecoration _authInput(IconData? icon, String hint) {
+  InputDecoration _authInput(
+    IconData? icon,
+    String hint, {
+    Widget? suffixIcon,
+  }) {
     return InputDecoration(
       hintText: hint,
       prefixIcon: icon == null ? null : Icon(icon, size: 18),
+      suffixIcon: suffixIcon,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       border: OutlineInputBorder(
