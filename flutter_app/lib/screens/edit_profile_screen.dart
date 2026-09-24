@@ -26,8 +26,6 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _nameController = TextEditingController();
-  final _incomeController = TextEditingController();
-  final _budgetGoalController = TextEditingController();
 
   String? _country;
   late String _employmentStatus;
@@ -55,12 +53,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ? user.employmentStatus!
         : 'Select status';
     _birthDate = user.birthDate;
-    if (user.monthlyIncome != null) {
-      _incomeController.text = _trimMoney(user.monthlyIncome!);
-    }
-    if (user.monthlyBudgetGoal != null) {
-      _budgetGoalController.text = _trimMoney(user.monthlyBudgetGoal!);
-    }
   }
 
   Future<void> _pickCountry() async {
@@ -69,16 +61,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _country = selected);
   }
 
-  String _trimMoney(double value) {
-    if (value == value.roundToDouble()) return value.round().toString();
-    return value.toStringAsFixed(2);
-  }
-
   @override
   void dispose() {
     _nameController.dispose();
-    _incomeController.dispose();
-    _budgetGoalController.dispose();
     super.dispose();
   }
 
@@ -190,12 +175,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         '${d.year}';
   }
 
-  double? _parseMoney(String raw) {
-    final cleaned = raw.trim().replaceAll(',', '');
-    if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
-  }
-
   Future<void> _save() async {
     if (_saving) return;
     final name = _nameController.text.trim();
@@ -214,8 +193,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         country: _country,
         employmentStatus: _employmentStatus,
         birthDate: _birthDate,
-        monthlyIncome: _parseMoney(_incomeController.text),
-        monthlyBudgetGoal: _parseMoney(_budgetGoalController.text),
         avatarBytes: _avatarBytes,
         avatarContentType: _avatarContentType ?? 'image/jpeg',
       );
@@ -402,28 +379,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Monthly income',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _incomeController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _input('0.00'),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Monthly budget goal',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _budgetGoalController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: _input('0.00'),
           ),
           const SizedBox(height: 24),
           SizedBox(

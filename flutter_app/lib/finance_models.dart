@@ -110,7 +110,7 @@ class BudgetModel {
   final String name;
   final String category;
   final double limit;
-  final String period; // 'Weekly' | 'Monthly' | 'Yearly'
+  final String period; // 'Daily' | 'Weekly' | 'Monthly' | 'Yearly'
   final String? _date;
 
   String get date => _date ?? todayIso();
@@ -347,6 +347,8 @@ DateTime _clampedDate(int year, int month, int day) {
 
 DateTime _shiftPeriod(DateTime anchor, String period, int count) {
   switch (period) {
+    case 'Daily':
+      return DateTime(anchor.year, anchor.month, anchor.day + count);
     case 'Weekly':
       return DateTime(anchor.year, anchor.month, anchor.day + 7 * count);
     case 'Yearly':
@@ -661,46 +663,44 @@ int essentialStreak(List<TransactionModel> txs) {
 }
 
 int healthScore(List<TransactionModel> txs, List<BudgetModel> budgets) {
-  final totals = monthlyTotals(txs);
-  final spent = spentByCategory(txs);
-  var score = 50;
+  if (txs.isEmpty && budgets.isEmpty) {
+    // Nothing set up yet — nothing to have overspent on.
+    return 100;
+  }
 
-  if (totals.income > 0) {
-    final ratio = totals.expenses / totals.income;
-    if (ratio < 0.5) {
-      score += 25;
-    } else if (ratio < 0.7) {
-      score += 18;
-    } else if (ratio < 0.9) {
-      score += 10;
-    } else if (ratio < 1) {
-      score += 4;
+  if (budgets.isEmpty) {
+    // No budget to measure against yet, so there's nothing to be over.
+    return 100;
+  }
+
+  final perBudgetScores = <double>[];
+
+  for (final budget in budgets) {
+    if (budget.limit <= 0) continue;
+
+    final spent = spentForBudget(budget: budget, budgets: budgets, txs: txs);
+    final ratio = spent / budget.limit;
+
+    if (ratio <= 1) {
+      // Within (or exactly at) the limit: the more headroom left in this
+      // budget's period, the higher the score. Right at the limit still
+      // scores high rather than dropping.
+      perBudgetScores.add(100 - 10 * ratio);
     } else {
-      score -= 10;
+      // Over the limit: the further past it, the lower the score.
+      final over = ratio - 1;
+      perBudgetScores.add((90 - 40 * over).clamp(0, 100));
     }
   }
 
-  final over = budgets.where((b) => spentForBudget(budget: b, budgets: budgets, txs: txs) > b.limit).length;
-    score += (15 - over * 8).clamp(-15, 15);
-
-  final saved = spent['Savings'] ?? 0;
-  if (saved > 0) {
-    score += (saved / (totals.income == 0 ? 1 : totals.income) * 100)
-        .round()
-        .clamp(0, 10);
+  if (perBudgetScores.isEmpty) {
+    // Budgets exist but none has a usable limit — nothing to score against.
+    return 100;
   }
 
-  final monthExp = txs
-      .where((x) => x.kind == TxKind.expense && isThisMonth(x.date))
-      .toList();
-  final essential = sumTransactions(
-    monthExp.where((x) => categoryOf(x.category).essential).toList(),
-  );
-  if (monthExp.isNotEmpty) {
-    score += ((essential / sumTransactions(monthExp) * 12)).round();
-  }
-
-  return score.clamp(0, 100);
+  final average =
+      perBudgetScores.reduce((a, b) => a + b) / perBudgetScores.length;
+  return average.round().clamp(0, 100);
 }
 
 final List<BudgetModel> SEED_BUDGETS = [

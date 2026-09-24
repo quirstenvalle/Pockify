@@ -1006,7 +1006,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   String _transactionFilter = 'This Month';
   String _budgetCategory = 'Food';
   String _budgetGoalFilter = 'All';
-  String _budgetPeriod = 'Monthly'; // Weekly | Monthly | Yearly
+  String _budgetPeriod = 'Monthly'; // Daily | Weekly | Monthly | Yearly
 
   AuthUser? _user;
   bool _loggingOut = false;
@@ -1022,9 +1022,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   final FinanceRepository _finance = FinanceRepository();
   final SettingsService _settingsService = SettingsService.instance;
   final BiometricService _biometric = BiometricService.instance;
-  final TextEditingController _budgetCategoryController = TextEditingController(
-    text: 'Food',
-  );
   final TextEditingController _budgetNameController = TextEditingController();
   final TextEditingController _budgetLimitController = TextEditingController();
   final TextEditingController _goalTitleController = TextEditingController();
@@ -1046,7 +1043,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _budgetCategoryController.dispose();
     _budgetNameController.dispose();
     _budgetLimitController.dispose();
     _goalTitleController.dispose();
@@ -1508,31 +1504,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
 
     Future<void> _addBudget() async {
     final name = _budgetNameController.text.trim();
-    if (name.isEmpty) {
-      _showMessage('Enter a budget name.');
-      return;
-    }
-    final result = validateBudgetInput(
-      category: _budgetCategory,
-      limitText: _budgetLimitController.text,
-    );
-    if (!result.ok) {
-      _showMessage(result.message ?? 'Add a category and a valid limit.');
-      return;
-    }
-
-    final duplicate = _budgets.any(
-      (item) =>
-          item.category == _budgetCategory.trim() &&
-          item.period == _budgetPeriod,
-    );
-    if (duplicate) {
-      _showMessage(
-        '${_budgetCategory.trim()} already has a $_budgetPeriod budget.',
-      );
-      return;
-    }
-
     final budget = buildBudget(
       name: name,
       category: _budgetCategory,
@@ -1598,15 +1569,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   }
 
   Future<void> _addGoal() async {
-    final result = validateGoalInput(
-      title: _goalTitleController.text,
-      targetText: _goalTargetController.text,
-    );
-    if (!result.ok) {
-      _showMessage(result.message ?? 'Add a goal name and a valid target.');
-      return;
-    }
-
     final goal = buildGoal(
       title: _goalTitleController.text,
       targetText: _goalTargetController.text,
@@ -1934,10 +1896,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
         '${now.year}';
     final amountController = TextEditingController(text: '0.00');
     final noteController = TextEditingController();
-    final dateController = TextEditingController(text: todayLabel);
     TxKind kind = TxKind.expense;
-    String category = 'Food';
-    final categories = CATEGORIES.map((c) => c.name).toList();
+    String? amountError;
+    final budgetedCategoryNames = _budgets.map((b) => b.category).toSet();
+    final categories = CATEGORIES
+        .map((c) => c.name)
+        .where((name) => budgetedCategoryNames.contains(name) || name == 'Others')
+        .toList();
+    String category = categories.contains('Food') ? 'Food' : categories.first;
 
     showDialog(
       context: context,
@@ -1994,7 +1960,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                     kind = TxKind.expense;
                                     if (category == 'Income' ||
                                         category.isEmpty) {
-                                      category = 'Food';
+                                      category = categories.contains('Food')
+                                          ? 'Food'
+                                          : categories.first;
                                     }
                                   }),
                                 ),
@@ -2014,54 +1982,91 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                           ),
                         ),
                         const SizedBox(height: 16),
-                        TextField(
-                          controller: amountController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(999),
+                            boxShadow: amountError != null
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.red.shade400
+                                          .withOpacity(0.35),
+                                      blurRadius: 10,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                : [],
                           ),
-                          decoration: InputDecoration(
-                            labelText: 'Amount',
-                            prefixText: '₱ ',
-                            filled: true,
-                            fillColor: const Color(0xFFF0EEE9),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(999),
-                              borderSide: BorderSide.none,
+                          child: TextField(
+                            controller: amountController,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) {
+                              if (amountError != null) {
+                                setSheetState(() => amountError = null);
+                              }
+                            },
+                            decoration: InputDecoration(
+                              labelText: 'Amount',
+                              prefixText: '₱ ',
+                              filled: true,
+                              fillColor: const Color(0xFFF0EEE9),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(999),
+                                borderSide: BorderSide(
+                                  color: amountError != null
+                                      ? Colors.red.shade700
+                                      : Colors.transparent,
+                                  width: amountError != null ? 1.3 : 0,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(999),
+                                borderSide: BorderSide(
+                                  color: amountError != null
+                                      ? Colors.red.shade700
+                                      : Colors.transparent,
+                                  width: amountError != null ? 1.3 : 0,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(999),
+                                borderSide: BorderSide(
+                                  color: amountError != null
+                                      ? Colors.red.shade700
+                                      : const Color(0xFFFF7F20),
+                                  width: 1.3,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                        if (kind == TxKind.expense) ...[
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
+                        if (amountError != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ActionChip(
-                                avatar: const Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.amber,
-                                ),
-                                label: const Text('Bus fare · ₱80'),
-                                onPressed: () {
-                                  amountController.text = '80';
-                                  noteController.text = 'Bus fare';
-                                },
+                              Icon(
+                                Icons.warning_rounded,
+                                color: Colors.red.shade700,
+                                size: 16,
                               ),
-                              ActionChip(
-                                avatar: const Icon(
-                                  Icons.star,
-                                  size: 14,
-                                  color: Colors.amber,
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  amountError!,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                                label: const Text('Rice bowl · ₱120'),
-                                onPressed: () {
-                                  amountController.text = '120';
-                                  noteController.text = 'Rice bowl';
-                                },
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                        ],
+                        if (kind == TxKind.expense) ...[
+                          const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -2084,43 +2089,12 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                           ),
                         ],
                         const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: dateController,
-                                readOnly: true,
-                                onTap: () async {
-                                  final picked = await showDatePicker(
-                                    context: context,
-                                    firstDate: DateTime(2020),
-                                    lastDate: DateTime(2100),
-                                    initialDate: DateTime.now(),
-                                  );
-                                  if (picked != null) {
-                                    dateController.text =
-                                        '${picked.month.toString().padLeft(2, '0')}/${picked.day.toString().padLeft(2, '0')}/${picked.year}';
-                                  }
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Date',
-                                  suffixIcon: Icon(
-                                    Icons.calendar_today_outlined,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TextField(
-                                controller: noteController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Note',
-                                  hintText: 'Optional',
-                                ),
-                              ),
-                            ),
-                          ],
+                        TextField(
+                          controller: noteController,
+                          decoration: const InputDecoration(
+                            labelText: 'Note',
+                            hintText: 'Optional',
+                          ),
                         ),
                         const SizedBox(height: 20),
                         SizedBox(
@@ -2131,10 +2105,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                 amountController.text,
                               );
                               if (!result.ok) {
-                                _showMessage(
-                                  result.message ??
-                                      'Enter a valid amount greater than 0.',
-                                );
+                                setSheetState(() {
+                                  amountError = result.message ??
+                                      'Enter a valid amount greater than 0.';
+                                });
                                 return;
                               }
 
@@ -2145,7 +2119,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                   category: kind == TxKind.income
                                       ? 'Income'
                                       : category,
-                                  dateText: dateController.text,
+                                  dateText: todayLabel,
                                   note: noteController.text,
                                 ),
                               );
@@ -2901,6 +2875,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final showGoals = _budgetGoalFilter == 'All' || _budgetGoalFilter == 'Goals';
 
     Future<void> openAddBudget() async {
+      String? nameError;
+      String? limitError;
+
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
@@ -2919,11 +2896,66 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 children: [
                   const Text('Add budget', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 16),
-                  TextField(
-                    controller: _budgetNameController,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(labelText: 'Name'),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: nameError != null
+                          ? [
+                              BoxShadow(
+                                color: Colors.red.shade400.withOpacity(0.35),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: TextField(
+                      controller: _budgetNameController,
+                      textCapitalization: TextCapitalization.sentences,
+                      onChanged: (_) {
+                        if (nameError != null) {
+                          setSheetState(() => nameError = null);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Name',
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: nameError != null
+                                ? Colors.red.shade700
+                                : Colors.grey.shade400,
+                            width: nameError != null ? 1.3 : 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: nameError != null
+                                ? Colors.red.shade700
+                                : const Color(0xFFFF7F20),
+                            width: 1.3,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
+                  if (nameError != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            nameError!,
+                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -2933,27 +2965,77 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                       selected: _budgetCategory == c.name,
                       onSelected: (_) => setSheetState(() {
                         _budgetCategory = c.name;
-                        _budgetCategoryController.text = c.name;
                       }),
                     )).toList(),
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _budgetCategoryController,
-                    onChanged: (value) => setSheetState(() => _budgetCategory = value),
-                    decoration: const InputDecoration(labelText: 'Category'),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: limitError != null
+                          ? [
+                              BoxShadow(
+                                color: Colors.red.shade400.withOpacity(0.35),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: TextField(
+                      controller: _budgetLimitController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) {
+                        if (limitError != null) {
+                          setSheetState(() => limitError = null);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Budget limit',
+                        prefixText: '₱ ',
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: limitError != null
+                                ? Colors.red.shade700
+                                : Colors.grey.shade400,
+                            width: limitError != null ? 1.3 : 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: limitError != null
+                                ? Colors.red.shade700
+                                : const Color(0xFFFF7F20),
+                            width: 1.3,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _budgetLimitController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Budget limit', prefixText: '₱ '),
-                  ),
+                  if (limitError != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            limitError!,
+                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   const Text('Budget period', style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
                   SegmentedButton<String>(
                     segments: const [
+                      ButtonSegment(value: 'Daily', label: Text('Daily')),
                       ButtonSegment(value: 'Weekly', label: Text('Weekly')),
                       ButtonSegment(value: 'Monthly', label: Text('Monthly')),
                       ButtonSegment(value: 'Yearly', label: Text('Yearly')),
@@ -2966,6 +3048,33 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     width: double.infinity,
                     child: FilledButton.icon(
                       onPressed: () async {
+                        final name = _budgetNameController.text.trim();
+                        if (name.isEmpty) {
+                          setSheetState(() => nameError = 'Enter a budget name.');
+                          return;
+                        }
+                        final result = validateBudgetInput(
+                          category: _budgetCategory,
+                          limitText: _budgetLimitController.text,
+                        );
+                        if (!result.ok) {
+                          setSheetState(() {
+                            limitError = result.message ?? 'Add a category and a valid limit.';
+                          });
+                          return;
+                        }
+                        final duplicate = _budgets.any(
+                          (item) =>
+                              item.category == _budgetCategory.trim() &&
+                              item.period == _budgetPeriod,
+                        );
+                        if (duplicate) {
+                          setSheetState(() {
+                            limitError =
+                                '${_budgetCategory.trim()} already has a $_budgetPeriod budget.';
+                          });
+                          return;
+                        }
                         Navigator.pop(sheetContext);
                         await _addBudget();
                       },
@@ -2982,46 +3091,178 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     }
 
     Future<void> openAddGoal() async {
+      String? titleError;
+      String? targetError;
+
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         showDragHandle: true,
-        builder: (sheetContext) => Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 8,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Add savings goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _goalTitleController,
-                decoration: const InputDecoration(labelText: 'Goal name', hintText: 'e.g. New laptop'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _goalTargetController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Target amount', prefixText: '₱ '),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(sheetContext);
-                    await _addGoal();
-                  },
-                  icon: const Icon(Icons.check_rounded),
-                  label: const Text('Create goal'),
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 8,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Add savings goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: titleError != null
+                        ? [
+                            BoxShadow(
+                              color: Colors.red.shade400.withOpacity(0.35),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: TextField(
+                    controller: _goalTitleController,
+                    onChanged: (_) {
+                      if (titleError != null) {
+                        setSheetState(() => titleError = null);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Goal name',
+                      hintText: 'e.g. New laptop',
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: titleError != null
+                              ? Colors.red.shade700
+                              : Colors.grey.shade400,
+                          width: titleError != null ? 1.3 : 1,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: titleError != null
+                              ? Colors.red.shade700
+                              : const Color(0xFFFF7F20),
+                          width: 1.3,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                if (titleError != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          titleError!,
+                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: targetError != null
+                        ? [
+                            BoxShadow(
+                              color: Colors.red.shade400.withOpacity(0.35),
+                              blurRadius: 10,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: TextField(
+                    controller: _goalTargetController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) {
+                      if (targetError != null) {
+                        setSheetState(() => targetError = null);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Target amount',
+                      prefixText: '₱ ',
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: targetError != null
+                              ? Colors.red.shade700
+                              : Colors.grey.shade400,
+                          width: targetError != null ? 1.3 : 1,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: targetError != null
+                              ? Colors.red.shade700
+                              : const Color(0xFFFF7F20),
+                          width: 1.3,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (targetError != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          targetError!,
+                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      final title = _goalTitleController.text.trim();
+                      if (title.isEmpty) {
+                        setSheetState(() => titleError = 'Enter a goal name.');
+                        return;
+                      }
+                      final result = validateGoalInput(
+                        title: _goalTitleController.text,
+                        targetText: _goalTargetController.text,
+                      );
+                      if (!result.ok) {
+                        setSheetState(() {
+                          targetError = result.message ?? 'Enter a valid target amount.';
+                        });
+                        return;
+                      }
+                      Navigator.pop(sheetContext);
+                      await _addGoal();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Create goal'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
