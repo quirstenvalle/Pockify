@@ -32,15 +32,19 @@ ValidationResult validateGoalInput({
 }
 
 BudgetModel buildBudget({
+  required String name,
   required String category,
   required String limitText,
+  required String period,
   required String date,
 }) {
   final limit = double.parse(limitText.trim());
   return BudgetModel(
     id: DateTime.now().microsecondsSinceEpoch.toString(),
+    name: name.trim(),
     category: category.trim(),
     limit: limit,
+    period: period,
     date: date,
   );
 }

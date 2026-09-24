@@ -107,23 +107,29 @@ class CategoryModel {
 
 class BudgetModel {
   final String id;
+  final String name;
   final String category;
   final double limit;
+  final String period; // 'Weekly' | 'Monthly' | 'Yearly'
   final String? _date;
 
   String get date => _date ?? todayIso();
 
   BudgetModel({
     required this.id,
+    this.name = '',
     required this.category,
     required this.limit,
+    this.period = 'Monthly',
     this._date,
   });
 
   Map<String, dynamic> toSupabase() => {
     'id': id,
+    'name': name,
     'category': category,
     'limit_amount': limit,
+    'period': period,
     'budget_date': date,
   };
 
@@ -131,8 +137,10 @@ class BudgetModel {
     final rawDate = json['budget_date'] ?? json['created_at'];
     return BudgetModel(
       id: json['id'] as String,
+      name: (json['name'] as String?) ?? '',
       category: json['category'] as String,
       limit: (json['limit_amount'] as num).toDouble(),
+      period: (json['period'] as String?) ?? 'Monthly',
       date: rawDate == null ? null : '$rawDate'.substring(0, 10),
     );
   }
@@ -321,36 +329,62 @@ Map<String, double> spentByCategory(List<TransactionModel> txs) {
   return map;
 }
 
+class BudgetWindow {
+  final DateTime start;
+  final DateTime end; // exclusive: the moment the budget resets
+
+  const BudgetWindow(this.start, this.end);
+
+  String get startIso => start.toIso8601String().substring(0, 10);
+  String get endIso => end.toIso8601String().substring(0, 10);
+}
+
+DateTime _clampedDate(int year, int month, int day) {
+  final first = DateTime(year, month, 1);
+  final lastDay = DateTime(first.year, first.month + 1, 0).day;
+  return DateTime(first.year, first.month, day > lastDay ? lastDay : day);
+}
+
+DateTime _shiftPeriod(DateTime anchor, String period, int count) {
+  switch (period) {
+    case 'Weekly':
+      return DateTime(anchor.year, anchor.month, anchor.day + 7 * count);
+    case 'Yearly':
+      return _clampedDate(anchor.year + count, anchor.month, anchor.day);
+    default:
+      return _clampedDate(anchor.year, anchor.month + count, anchor.day);
+  }
+}
+
+BudgetWindow budgetWindow(BudgetModel budget, [DateTime? now]) {
+  final current = now ?? DateTime.now();
+  final today = DateTime(current.year, current.month, current.day);
+  final parsed = DateTime.tryParse(budget.date) ?? today;
+  final anchor = DateTime(parsed.year, parsed.month, parsed.day);
+  var n = 0;
+  while (!_shiftPeriod(anchor, budget.period, n + 1).isAfter(today)) {
+    n++;
+  }
+  return BudgetWindow(
+    _shiftPeriod(anchor, budget.period, n),
+    _shiftPeriod(anchor, budget.period, n + 1),
+  );
+}
+
 double spentForBudget({
   required BudgetModel budget,
   required List<BudgetModel> budgets,
   required List<TransactionModel> txs,
 }) {
-  final start = DateTime.tryParse(budget.date);
-  if (start == null) return 0;
-
-  final nextStart = budgets
-      .where(
-        (candidate) =>
-            candidate.category == budget.category &&
-            candidate.date.compareTo(budget.date) > 0,
-      )
-      .map((candidate) => DateTime.tryParse(candidate.date))
-      .whereType<DateTime>()
-      .fold<DateTime?>(null, (nearest, candidate) {
-        if (nearest == null || candidate.isBefore(nearest)) return candidate;
-        return nearest;
-      });
-
-  return txs
-      .where(
-        (tx) =>
-            tx.kind == TxKind.expense &&
-            tx.category == budget.category &&
-            !DateTime.parse(tx.date).isBefore(start) &&
-            (nextStart == null || DateTime.parse(tx.date).isBefore(nextStart)),
-      )
-      .fold(0.0, (total, tx) => total + tx.amount);
+  final window = budgetWindow(budget);
+  return txs.where((tx) {
+    if (tx.kind != TxKind.expense || tx.category != budget.category) {
+      return false;
+    }
+    final d = DateTime.tryParse(tx.date);
+    if (d == null) return false;
+    return !d.isBefore(window.start) && d.isBefore(window.end);
+  }).fold(0.0, (total, tx) => total + tx.amount);
 }
 
 class ChartPoint {
@@ -493,7 +527,7 @@ List<String> smartSuggestions(
   }
 
   for (final budget in budgets) {
-    final used = spent[budget.category] ?? 0;
+    final used = spentForBudget(budget: budget, budgets: budgets, txs: txs);
     if (used > budget.limit) {
       suggestions.add(
         '${budget.category} is ${peso(used - budget.limit)} over budget. Keep the next ${budget.category.toLowerCase()} purchase below the limit.',
@@ -544,7 +578,7 @@ String? dailyFinancialInsight(
   }
 
   for (final budget in budgets) {
-    final used = spent[budget.category] ?? 0;
+    final used = spentForBudget(budget: budget, budgets: budgets, txs: txs);
     final remaining = budget.limit - used;
     if (remaining >= 0 && budget.limit > 0 && used / budget.limit >= 0.8) {
       candidates.add(
@@ -571,12 +605,13 @@ List<AlertModel> budgetAlerts(
 
   for (final budget in budgets) {
     final used = spentForBudget(budget: budget, budgets: budgets, txs: txs);
+    final window = budgetWindow(budget);
     final pct = budget.limit == 0 ? 0.0 : used / budget.limit;
 
     if (pct >= 1) {
       alerts.add(
         AlertModel(
-          id: 'budget-${budget.id}-over',
+          id: 'budget-${budget.id}-${window.startIso}-over',
           level: 'over',
           title: 'You exceeded your ${budget.category} budget',
           body:
@@ -586,7 +621,7 @@ List<AlertModel> budgetAlerts(
     } else if (pct >= 0.8) {
       alerts.add(
         AlertModel(
-          id: 'budget-${budget.id}-warn',
+          id: 'budget-${budget.id}-${window.startIso}-warn',
           level: 'warn',
           title: '${budget.category} budget at ${((pct * 100).round())}%',
           body:
@@ -645,8 +680,8 @@ int healthScore(List<TransactionModel> txs, List<BudgetModel> budgets) {
     }
   }
 
-  final over = budgets.where((b) => (spent[b.category] ?? 0) > b.limit).length;
-  score += (15 - over * 8).clamp(-15, 15);
+  final over = budgets.where((b) => spentForBudget(budget: b, budgets: budgets, txs: txs) > b.limit).length;
+    score += (15 - over * 8).clamp(-15, 15);
 
   final saved = spent['Savings'] ?? 0;
   if (saved > 0) {

@@ -262,7 +262,7 @@ function BudgetsPage() {
                 toast.error("Add a goal name and target");
                 return;
               }
-              addGoal({ title: goalTitle, target: n, current: 0 });
+              addGoal({ title: goalTitle, target: n });
               setGoalTitle("");
               setGoalTarget("");
             }}

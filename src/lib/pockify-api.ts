@@ -16,7 +16,7 @@ type FinancePayload = {
 };
 
 const apiBase = () =>
-  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ??
+  (import.meta.env["VITE_API_URL"] as string | undefined)?.replace(/\/$/, "") ??
   "http://localhost:8000/api";
 
 const token = () =>
