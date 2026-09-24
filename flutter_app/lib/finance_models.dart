@@ -321,6 +321,38 @@ Map<String, double> spentByCategory(List<TransactionModel> txs) {
   return map;
 }
 
+double spentForBudget({
+  required BudgetModel budget,
+  required List<BudgetModel> budgets,
+  required List<TransactionModel> txs,
+}) {
+  final start = DateTime.tryParse(budget.date);
+  if (start == null) return 0;
+
+  final nextStart = budgets
+      .where(
+        (candidate) =>
+            candidate.category == budget.category &&
+            candidate.date.compareTo(budget.date) > 0,
+      )
+      .map((candidate) => DateTime.tryParse(candidate.date))
+      .whereType<DateTime>()
+      .fold<DateTime?>(null, (nearest, candidate) {
+        if (nearest == null || candidate.isBefore(nearest)) return candidate;
+        return nearest;
+      });
+
+  return txs
+      .where(
+        (tx) =>
+            tx.kind == TxKind.expense &&
+            tx.category == budget.category &&
+            !DateTime.parse(tx.date).isBefore(start) &&
+            (nextStart == null || DateTime.parse(tx.date).isBefore(nextStart)),
+      )
+      .fold(0.0, (total, tx) => total + tx.amount);
+}
+
 class ChartPoint {
   final String label;
   final double amount;
@@ -535,17 +567,16 @@ List<AlertModel> budgetAlerts(
   List<TransactionModel> txs,
   List<BudgetModel> budgets,
 ) {
-  final spent = spentByCategory(txs);
   final alerts = <AlertModel>[];
 
   for (final budget in budgets) {
-    final used = spent[budget.category] ?? 0;
+    final used = spentForBudget(budget: budget, budgets: budgets, txs: txs);
     final pct = budget.limit == 0 ? 0.0 : used / budget.limit;
 
     if (pct >= 1) {
       alerts.add(
         AlertModel(
-          id: 'budget-${budget.category}-over',
+          id: 'budget-${budget.id}-over',
           level: 'over',
           title: 'You exceeded your ${budget.category} budget',
           body:
@@ -555,7 +586,7 @@ List<AlertModel> budgetAlerts(
     } else if (pct >= 0.8) {
       alerts.add(
         AlertModel(
-          id: 'budget-${budget.category}-warn',
+          id: 'budget-${budget.id}-warn',
           level: 'warn',
           title: '${budget.category} budget at ${((pct * 100).round())}%',
           body:

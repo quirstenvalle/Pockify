@@ -664,15 +664,16 @@ class _AuthScreenState extends State<AuthScreen> {
                               onTap: _pickCountry,
                               borderRadius: BorderRadius.circular(6),
                               child: InputDecorator(
-                                decoration: _authInput(
-                                  Icons.public,
-                                  'Select country',
-                                ).copyWith(
-                                  suffixIcon: const Icon(
-                                    Icons.expand_more,
-                                    size: 18,
-                                  ),
-                                ),
+                                decoration:
+                                    _authInput(
+                                      Icons.public,
+                                      'Select country',
+                                    ).copyWith(
+                                      suffixIcon: const Icon(
+                                        Icons.expand_more,
+                                        size: 18,
+                                      ),
+                                    ),
                                 child: Text(
                                   _country ?? 'Select country',
                                   style: TextStyle(
@@ -1512,6 +1513,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     );
     if (!result.ok) {
       _showMessage(result.message ?? 'Add a category and a valid limit.');
+      return;
+    }
+
+    final existing = _budgets
+        .where((item) => item.category == _budgetCategory.trim())
+        .toList();
+    final spent = spentByCategory(_transactions)[_budgetCategory.trim()] ?? 0;
+    final hasActiveBudget = existing.any((item) => spent < item.limit);
+    if (hasActiveBudget) {
+      _showMessage(
+        '${_budgetCategory.trim()} already has an active budget. Use it until it is fully consumed.',
+      );
       return;
     }
 
@@ -2877,15 +2890,17 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   }
 
   Widget _budgetsView() {
-    final spentMap = spentByCategory(_transactions);
-
     return ListView(
       padding: _pagePadding(context),
       children: [
         const _SectionHeader(title: 'Budgets & goals'),
         const SizedBox(height: 12),
         ..._budgets.map((budget) {
-          final used = spentMap[budget.category] ?? 0;
+          final used = spentForBudget(
+            budget: budget,
+            budgets: _budgets,
+            txs: _transactions,
+          );
           final pct = budget.limit == 0
               ? 0.0
               : (used / budget.limit).clamp(0.0, 1.2);
@@ -3779,6 +3794,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 ],
               ),
             ),
+            IconButton(
+              onPressed: () => setState(() => _selectedIndex = 4),
+              icon: const Icon(Icons.person_outline),
+              tooltip: 'Profile',
+              color: _selectedIndex == 4
+                  ? const Color(0xFFFF7F20)
+                  : const Color(0xFF77736C),
+            ),
           ],
         ),
       ),
@@ -3821,11 +3844,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
           icon: Icon(Icons.insights_outlined),
           selectedIcon: Icon(Icons.insights),
           label: Text('Insights'),
-        ),
-        NavigationRailDestination(
-          icon: Icon(Icons.person_outline),
-          selectedIcon: Icon(Icons.person),
-          label: Text('Profile'),
         ),
       ],
     );
@@ -3881,12 +3899,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 selectedIcon: Icons.insights,
                 label: 'Insights',
                 index: 3,
-              ),
-              _navItem(
-                icon: Icons.person_outline,
-                selectedIcon: Icons.person,
-                label: 'Profile',
-                index: 4,
               ),
             ],
           ),

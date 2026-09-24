@@ -188,9 +188,11 @@ class SupabaseAuthClient {
 
   Future<String?> sendPasswordResetEmail(String email) async {
     try {
-      // Let Supabase use its configured Site URL on web; localhost origins
-      // commonly fail the project's redirect allowlist.
-      final redirectTo = kIsWeb ? null : ApiConfig.oauthRedirectUrl;
+      // Return web users to the exact app URL so the recovery event can be
+      // consumed by main.dart after Supabase exchanges the PKCE code.
+      final redirectTo = kIsWeb
+          ? Uri.base.replace(queryParameters: {}, fragment: '').toString()
+          : ApiConfig.oauthRedirectUrl;
       await _client.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         redirectTo: redirectTo,
@@ -562,8 +564,7 @@ class SupabaseAuthClient {
               false),
       currency:
           (profile?['currency'] as String?) ?? meta['currency'] as String?,
-      country:
-          (profile?['country'] as String?) ?? meta['country'] as String?,
+      country: (profile?['country'] as String?) ?? meta['country'] as String?,
       employmentStatus:
           (profile?['employment_status'] as String?) ??
           meta['employment_status'] as String?,

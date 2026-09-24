@@ -69,6 +69,38 @@ void main() {
       );
     });
 
+    test('same-category budgets use separate date periods', () {
+      final txs = [
+        TransactionModel(
+          id: '1',
+          kind: TxKind.expense,
+          amount: 1000,
+          category: 'Shopping',
+          date: '2026-09-23',
+        ),
+      ];
+      final budgets = [
+        BudgetModel(
+          id: 'old',
+          category: 'Shopping',
+          limit: 1000,
+          date: '2026-09-23',
+        ),
+        BudgetModel(
+          id: 'new',
+          category: 'Shopping',
+          limit: 1000,
+          date: '2026-09-26',
+        ),
+      ];
+
+      expect(
+        spentForBudget(budget: budgets[0], budgets: budgets, txs: txs),
+        1000,
+      );
+      expect(spentForBudget(budget: budgets[1], budgets: budgets, txs: txs), 0);
+    });
+
     test('health score stays within valid range', () {
       final txs = SEED_TRANSACTIONS;
       final budgets = SEED_BUDGETS;
