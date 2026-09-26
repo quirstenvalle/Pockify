@@ -34,6 +34,10 @@ class AuthService {
   bool get _useSupabase => ApiConfig.useSupabase;
   bool get _useLaravel => ApiConfig.useLaravel;
 
+  Future<void> completeWebAuthRedirect() async {
+    if (_useSupabase) await _supabase.completeWebAuthRedirect();
+  }
+
   void Function()? watchRemoteVerification(void Function() onVerified) {
     if (!_useSupabase) return null;
     var handled = false;

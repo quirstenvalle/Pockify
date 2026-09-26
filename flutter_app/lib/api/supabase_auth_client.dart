@@ -12,6 +12,22 @@ import 'api_config.dart';
 class SupabaseAuthClient {
   SupabaseClient get _client => Supabase.instance.client;
 
+  /// Exchanges the web callback after auth listeners have been registered.
+  Future<void> completeWebAuthRedirect() async {
+    if (!kIsWeb) return;
+    final uri = Uri.base;
+    final fragment = Uri.splitQueryString(uri.fragment);
+    final hasAuthCallback =
+        uri.queryParameters.containsKey('code') ||
+        uri.queryParameters.containsKey('access_token') ||
+        fragment.containsKey('code') ||
+        fragment.containsKey('access_token');
+    if (!hasAuthCallback) return;
+    try {
+      await _client.auth.getSessionFromUrl(uri);
+    } catch (_) {}
+  }
+
   /// Web uses the current origin; mobile uses the app deep-link scheme.
   String get _authRedirectTo =>
       kIsWeb ? Uri.base.origin : ApiConfig.oauthRedirectUrl;

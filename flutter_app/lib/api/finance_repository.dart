@@ -64,10 +64,21 @@ class FinanceRepository {
     final userId = _userId;
     if (userId == null) throw StateError('Not signed in');
 
-    await _client.from('transactions').upsert({
-      ...tx.toSupabase(),
-      'user_id': userId,
-    });
+    final payload = {...tx.toSupabase(), 'user_id': userId};
+
+    try {
+      await _client.from('transactions').upsert(payload);
+    } on PostgrestException catch (error) {
+      if (error.code == 'PGRST204' &&
+          payload.containsKey('budget_id') &&
+          error.message.contains("'budget_id'")) {
+        final fallback = Map<String, dynamic>.from(payload)
+          ..remove('budget_id');
+        await _client.from('transactions').upsert(fallback);
+        return;
+      }
+      rethrow;
+    }
   }
 
   Future<void> deleteTransaction(String id) async {

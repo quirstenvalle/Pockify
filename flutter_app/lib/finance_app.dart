@@ -53,6 +53,7 @@ class _FinanceAppState extends State<FinanceApp> {
       if (!mounted) return;
       setState(() => _passwordRecovery = true);
     });
+    AuthService.instance.completeWebAuthRedirect();
     _restoreSession();
   }
 
@@ -1445,9 +1446,51 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     }
   }
 
+  Future<TransactionModel> _allocateTransactionBudget(
+    TransactionModel tx,
+  ) async {
+    final matching = _budgets
+        .where((budget) => budget.category == tx.category)
+        .toList();
+    if (matching.isEmpty) return tx;
+
+    for (final budget in matching) {
+      final used = spentForBudget(
+        budget: budget,
+        budgets: _budgets,
+        txs: _transactions,
+      );
+      if (budget.limit - used >= tx.amount) {
+        return tx.copyWith(budgetId: budget.id);
+      }
+    }
+
+    final template = matching.last;
+    final newBudget = buildBudget(
+      name: nextAvailableBudgetName(tx.category, _budgets),
+      category: template.category,
+      limitText: template.limit.toString(),
+      period: template.period,
+      date: DateTime.now().toIso8601String().substring(0, 10),
+    );
+    setState(() => _budgets.add(newBudget));
+    if (ApiConfig.useSupabase) {
+      await _finance.upsertBudget(newBudget);
+    }
+    return tx.copyWith(budgetId: newBudget.id);
+  }
+
   Future<void> _addTransaction(TransactionModel tx) async {
-    setState(() => _transactions.insert(0, tx));
-    if (tx.kind == TxKind.expense) {
+    TransactionModel allocated = tx;
+    try {
+      allocated = await _allocateTransactionBudget(tx);
+      setState(() => _transactions.insert(0, allocated));
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage('Could not allocate budget. $error');
+      return;
+    }
+    if (allocated.kind == TxKind.expense) {
       setState(() => _dailyReminderBanner = null);
     }
     if (!ApiConfig.useSupabase) {
@@ -1456,12 +1499,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
       return;
     }
     try {
-      await _finance.upsertTransaction(tx);
+      await _finance.upsertTransaction(allocated);
       await _checkBudgetThresholdAlerts();
       await _checkStreakCelebrations();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _transactions.removeWhere((item) => item.id == tx.id));
+      setState(
+        () => _transactions.removeWhere((item) => item.id == allocated.id),
+      );
       _showMessage('Could not save transaction. $error');
     }
   }
@@ -1502,14 +1547,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     if (confirmed) await _removeTransaction(id);
   }
 
-    Future<void> _addBudget() async {
-    final name = _budgetNameController.text.trim();
+  Future<void> _addBudget({required String name, DateTime? startDate}) async {
+    final budgetDate = startDate ?? DateTime.now();
     final budget = buildBudget(
       name: name,
       category: _budgetCategory,
       limitText: _budgetLimitController.text,
       period: _budgetPeriod,
-      date: DateTime.now().toIso8601String().substring(0, 10),
+      date: budgetDate.toIso8601String().substring(0, 10),
     );
     setState(() {
       _budgets.add(budget);
@@ -1899,10 +1944,17 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     TxKind kind = TxKind.expense;
     String? amountError;
     final budgetedCategoryNames = _budgets.map((b) => b.category).toSet();
-    final categories = CATEGORIES
-        .map((c) => c.name)
-        .where((name) => budgetedCategoryNames.contains(name) || name == 'Others')
-        .toList();
+    final categories = <String>{
+      ...CATEGORIES
+          .map((c) => c.name)
+          .where(
+            (name) => budgetedCategoryNames.contains(name) || name == 'Others',
+          ),
+      ..._budgets.map(
+        (budget) =>
+            budget.name.trim().isEmpty ? budget.category : budget.name.trim(),
+      ),
+    }.toList();
     String category = categories.contains('Food') ? 'Food' : categories.first;
 
     showDialog(
@@ -1988,8 +2040,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                             boxShadow: amountError != null
                                 ? [
                                     BoxShadow(
-                                      color: Colors.red.shade400
-                                          .withOpacity(0.35),
+                                      color: Colors.red.shade400.withOpacity(
+                                        0.35,
+                                      ),
                                       blurRadius: 10,
                                       spreadRadius: 1,
                                     ),
@@ -1998,8 +2051,7 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                           ),
                           child: TextField(
                             controller: amountController,
-                            keyboardType:
-                                const TextInputType.numberWithOptions(
+                            keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
                             onChanged: (_) {
@@ -2106,7 +2158,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                               );
                               if (!result.ok) {
                                 setSheetState(() {
-                                  amountError = result.message ??
+                                  amountError =
+                                      result.message ??
                                       'Enter a valid amount greater than 0.';
                                 });
                                 return;
@@ -2118,7 +2171,22 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                   amountText: amountController.text,
                                   category: kind == TxKind.income
                                       ? 'Income'
-                                      : category,
+                                      : _budgets
+                                                .where(
+                                                  (budget) =>
+                                                      (budget.name
+                                                              .trim()
+                                                              .isEmpty
+                                                          ? budget.category
+                                                          : budget.name
+                                                                .trim()) ==
+                                                      category,
+                                                )
+                                                .map(
+                                                  (budget) => budget.category,
+                                                )
+                                                .firstOrNull ??
+                                            category,
                                   dateText: todayLabel,
                                   note: noteController.text,
                                 ),
@@ -2150,13 +2218,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     final score = healthScore(_transactions, _budgets);
     final alerts = _activeAlerts;
     final recent = [..._transactions]..sort((a, b) => b.date.compareTo(a.date));
-    final budgetTotal = _budgets.fold<double>(0, (sum, item) => sum + item.limit);
+    final budgetTotal = _budgets.fold<double>(
+      0,
+      (sum, item) => sum + item.limit,
+    );
     final budgetUsed = _budgets.fold<double>(
       0,
       (sum, item) =>
           sum +
-          spentForBudget(budget: item, budgets: _budgets, txs: _transactions)
-              .clamp(0, item.limit),
+          spentForBudget(
+            budget: item,
+            budgets: _budgets,
+            txs: _transactions,
+          ).clamp(0, item.limit),
     );
     final tips = smartSuggestions(_transactions, _budgets);
     final dailyInsight = dailyFinancialInsight(_transactions, _budgets);
@@ -2534,7 +2608,11 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
         ),
         const SizedBox(height: 10),
         ..._budgets.map((budget) {
-          final used = spentForBudget(budget: budget, budgets: _budgets, txs: _transactions);
+          final used = spentForBudget(
+            budget: budget,
+            budgets: _budgets,
+            txs: _transactions,
+          );
           final pct = ((used / budget.limit) * 100).clamp(0, 100);
           final cat = categoryOf(budget.category);
           return Card(
@@ -2871,8 +2949,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
   }
 
   Widget _budgetsView() {
-    final showBudgets = _budgetGoalFilter == 'All' || _budgetGoalFilter == 'Budgets';
-    final showGoals = _budgetGoalFilter == 'All' || _budgetGoalFilter == 'Goals';
+    final showBudgets =
+        _budgetGoalFilter == 'All' || _budgetGoalFilter == 'Budgets';
+    final showGoals =
+        _budgetGoalFilter == 'All' || _budgetGoalFilter == 'Goals';
 
     Future<void> openAddBudget() async {
       String? nameError;
@@ -2894,7 +2974,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Add budget', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  const Text(
+                    'Add budget',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
                   const SizedBox(height: 16),
                   Container(
                     decoration: BoxDecoration(
@@ -2945,12 +3028,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                        Icon(
+                          Icons.warning_rounded,
+                          color: Colors.red.shade700,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             nameError!,
-                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ],
@@ -2960,13 +3050,18 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: CATEGORIES.take(8).map((c) => ChoiceChip(
-                      label: CategoryChipLabel(name: c.name),
-                      selected: _budgetCategory == c.name,
-                      onSelected: (_) => setSheetState(() {
-                        _budgetCategory = c.name;
-                      }),
-                    )).toList(),
+                    children: CATEGORIES
+                        .take(8)
+                        .map(
+                          (c) => ChoiceChip(
+                            label: CategoryChipLabel(name: c.name),
+                            selected: _budgetCategory == c.name,
+                            onSelected: (_) => setSheetState(() {
+                              _budgetCategory = c.name;
+                            }),
+                          ),
+                        )
+                        .toList(),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -2984,7 +3079,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     ),
                     child: TextField(
                       controller: _budgetLimitController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       onChanged: (_) {
                         if (limitError != null) {
                           setSheetState(() => limitError = null);
@@ -3019,19 +3116,29 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                        Icon(
+                          Icons.warning_rounded,
+                          color: Colors.red.shade700,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             limitError!,
-                            style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ],
                   const SizedBox(height: 12),
-                  const Text('Budget period', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Text(
+                    'Budget period',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 8),
                   SegmentedButton<String>(
                     segments: const [
@@ -3041,7 +3148,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                       ButtonSegment(value: 'Yearly', label: Text('Yearly')),
                     ],
                     selected: {_budgetPeriod},
-                    onSelectionChanged: (value) => setSheetState(() => _budgetPeriod = value.first),
+                    onSelectionChanged: (value) =>
+                        setSheetState(() => _budgetPeriod = value.first),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
@@ -3050,7 +3158,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                       onPressed: () async {
                         final name = _budgetNameController.text.trim();
                         if (name.isEmpty) {
-                          setSheetState(() => nameError = 'Enter a budget name.');
+                          setSheetState(
+                            () => nameError = 'Enter a budget name.',
+                          );
                           return;
                         }
                         final result = validateBudgetInput(
@@ -3059,24 +3169,24 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                         );
                         if (!result.ok) {
                           setSheetState(() {
-                            limitError = result.message ?? 'Add a category and a valid limit.';
-                          });
-                          return;
-                        }
-                        final duplicate = _budgets.any(
-                          (item) =>
-                              item.category == _budgetCategory.trim() &&
-                              item.period == _budgetPeriod,
-                        );
-                        if (duplicate) {
-                          setSheetState(() {
                             limitError =
-                                '${_budgetCategory.trim()} already has a $_budgetPeriod budget.';
+                                result.message ??
+                                'Add a category and a valid limit.';
                           });
                           return;
                         }
+                        final uniqueName = nextAvailableBudgetName(
+                          name,
+                          _budgets,
+                        );
+                        final isDuplicateName = uniqueName != name;
                         Navigator.pop(sheetContext);
-                        await _addBudget();
+                        await _addBudget(
+                          name: uniqueName,
+                          startDate: isDuplicateName
+                              ? DateTime.now().add(const Duration(days: 1))
+                              : null,
+                        );
                       },
                       icon: const Icon(Icons.check_rounded),
                       label: const Text('Create budget'),
@@ -3110,7 +3220,10 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Add savings goal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                const Text(
+                  'Add savings goal',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 16),
                 Container(
                   decoration: BoxDecoration(
@@ -3161,12 +3274,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                      Icon(
+                        Icons.warning_rounded,
+                        color: Colors.red.shade700,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           titleError!,
-                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -3188,7 +3308,9 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   ),
                   child: TextField(
                     controller: _goalTargetController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     onChanged: (_) {
                       if (targetError != null) {
                         setSheetState(() => targetError = null);
@@ -3223,12 +3345,19 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 16),
+                      Icon(
+                        Icons.warning_rounded,
+                        color: Colors.red.shade700,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           targetError!,
-                          style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -3250,7 +3379,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                       );
                       if (!result.ok) {
                         setSheetState(() {
-                          targetError = result.message ?? 'Enter a valid target amount.';
+                          targetError =
+                              result.message ?? 'Enter a valid target amount.';
                         });
                         return;
                       }
@@ -3269,8 +3399,14 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     }
 
     Widget budgetCard(BudgetModel budget) {
-      final used = spentForBudget(budget: budget, budgets: _budgets, txs: _transactions);
-      final pct = budget.limit == 0 ? 0.0 : (used / budget.limit).clamp(0.0, 1.2);
+      final used = spentForBudget(
+        budget: budget,
+        budgets: _budgets,
+        txs: _transactions,
+      );
+      final pct = budget.limit == 0
+          ? 0.0
+          : (used / budget.limit).clamp(0.0, 1.2);
       final over = used > budget.limit;
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
@@ -3279,18 +3415,35 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                CircleAvatar(backgroundColor: Colors.teal.shade50, child: CategoryIcon(budget.category, size: 20)),
-                const SizedBox(width: 12),
-                Expanded(child: Text(budget.name.isEmpty ? budget.category : budget.name, style: const TextStyle(fontWeight: FontWeight.w800))),                IconButton(
-                  onPressed: () => _confirmRemoveBudget(budget.id),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 19),
-                  color: Colors.grey,
-                  tooltip: 'Delete budget',
-                ),
-                Text('${((used / (budget.limit == 0 ? 1 : budget.limit)) * 100).clamp(0, 100).round()}%',
-                    style: TextStyle(color: over ? Colors.red : Colors.green, fontWeight: FontWeight.w800, fontSize: 12)),
-              ]),
+              Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.teal.shade50,
+                    child: CategoryIcon(budget.category, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      budget.name.isEmpty ? budget.category : budget.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => _confirmRemoveBudget(budget.id),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                    color: Colors.grey,
+                    tooltip: 'Delete budget',
+                  ),
+                  Text(
+                    '${((used / (budget.limit == 0 ? 1 : budget.limit)) * 100).clamp(0, 100).round()}%',
+                    style: TextStyle(
+                      color: over ? Colors.red : Colors.green,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 12),
               LinearProgressIndicator(
                 value: pct > 1 ? 1 : pct,
@@ -3300,10 +3453,15 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                 backgroundColor: Colors.grey.shade200,
               ),
               const SizedBox(height: 8),
-              Text('${peso(used)} / ${peso(budget.limit)} • ${peso((budget.limit - used).clamp(0, budget.limit))} left',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              Text(
+                '${peso(used)} / ${peso(budget.limit)} • ${peso((budget.limit - used).clamp(0, budget.limit))} left',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
               const SizedBox(height: 4),
-              Text('${budget.category} • ${budget.period} • resets ${budgetWindow(budget).endIso}', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+              Text(
+                '${budget.category} • ${budget.period} • resets ${budgetWindow(budget).endIso}',
+                style: const TextStyle(color: Colors.grey, fontSize: 11),
+              ),
             ],
           ),
         ),
@@ -3311,40 +3469,61 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
     }
 
     Widget goalCard(GoalModel goal) {
-      final progress = goal.target == 0 ? 0.0 : (goal.current / goal.target).clamp(0.0, 1.0);
+      final progress = goal.target == 0
+          ? 0.0
+          : (goal.current / goal.target).clamp(0.0, 1.0);
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const CircleAvatar(
-                backgroundColor: Color(0xFFFFE4EF),
-                child: Icon(Icons.flag_rounded, color: Color(0xFFE88FB4)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(
+                    backgroundColor: Color(0xFFFFE4EF),
+                    child: Icon(Icons.flag_rounded, color: Color(0xFFE88FB4)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      goal.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(goal.title, style: const TextStyle(fontWeight: FontWeight.w800))),
-            ]),
-            if (goal.isRecurring)
-              Text('${peso(goal.recurringAmount ?? 0)} every ${(goal.recurringFrequency ?? 'month').toLowerCase()}',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey))
-            else ...[
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: progress, minHeight: 9, borderRadius: BorderRadius.circular(999),
-                  color: const Color(0xFFE88FB4), backgroundColor: Colors.grey.shade200),
-              const SizedBox(height: 8),
-              Text('${peso(goal.current)} / ${peso(goal.target)} • ${(progress * 100).round()}%',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              if (goal.isRecurring)
+                Text(
+                  '${peso(goal.recurringAmount ?? 0)} every ${(goal.recurringFrequency ?? 'month').toLowerCase()}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                )
+              else ...[
+                const SizedBox(height: 12),
+                LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 9,
+                  borderRadius: BorderRadius.circular(999),
+                  color: const Color(0xFFE88FB4),
+                  backgroundColor: Colors.grey.shade200,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${peso(goal.current)} / ${peso(goal.target)} • ${(progress * 100).round()}%',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _contributeGoal(goal.id),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add amount'),
+                ),
+              ),
             ],
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _contributeGoal(goal.id),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add amount'),
-              ),
-            ),
-          ]),
+          ),
         ),
       );
     }
@@ -3376,7 +3555,12 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
         const SizedBox(height: 24),
         Row(
           children: [
-            const Expanded(child: Text('Your entries', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+            const Expanded(
+              child: Text(
+                'Your entries',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+            ),
             DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _budgetGoalFilter,
@@ -3385,7 +3569,8 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                   DropdownMenuItem(value: 'Budgets', child: Text('Budgets')),
                   DropdownMenuItem(value: 'Goals', child: Text('Goals')),
                 ],
-                onChanged: (value) => setState(() => _budgetGoalFilter = value ?? 'All'),
+                onChanged: (value) =>
+                    setState(() => _budgetGoalFilter = value ?? 'All'),
               ),
             ),
           ],
@@ -3395,16 +3580,33 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
           if (_budgets.isNotEmpty)
             ..._budgets.map(budgetCard)
           else
-            const Padding(padding: EdgeInsets.only(bottom: 16), child: Text('No budgets created yet.', style: TextStyle(color: Colors.grey))),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text(
+                'No budgets created yet.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
         ],
         if (showGoals) ...[
           if (_goals.isNotEmpty)
             ..._goals.map(goalCard)
           else
-            const Padding(padding: EdgeInsets.only(bottom: 16), child: Text('No goals created yet.', style: TextStyle(color: Colors.grey))),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text(
+                'No goals created yet.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
         ],
         if ((showBudgets && _budgets.isEmpty) && (showGoals && _goals.isEmpty))
-          const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('Create a budget or goal to get started.'))),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Text('Create a budget or goal to get started.'),
+            ),
+          ),
         const SizedBox(height: 16),
       ],
     );
@@ -3613,8 +3815,6 @@ class _FinanceHomeScreenState extends State<FinanceHomeScreen>
                                 value: sorted.first.value == 0
                                     ? 0
                                     : entry.value / sorted.first.value,
-                                minHeight: 8,
-                                borderRadius: BorderRadius.circular(999),
                                 color: Colors.teal,
                               ),
                             ],

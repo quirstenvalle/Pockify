@@ -1,8 +1,8 @@
 /// Backend + Supabase connection settings for Pockify.
 class ApiConfig {
-  /// Active auth backend. Prefer [AuthBackend.supabase] in production.
+  /// Active auth backend. Use Laravel/MySQL for the deployed local API.
   /// Tests may temporarily set this to [AuthBackend.local].
-  static AuthBackend backend = AuthBackend.supabase;
+  static AuthBackend backend = AuthBackend.laravel;
 
   static bool get useSupabase => backend == AuthBackend.supabase;
   static bool get useLaravel => backend == AuthBackend.laravel;
@@ -10,7 +10,7 @@ class ApiConfig {
   /// Laravel API (only when [backend] is laravel).
   static const String baseUrl = String.fromEnvironment(
     'POCKIFY_API_BASE',
-    defaultValue: 'http://127.0.0.1:8000/api',
+    defaultValue: 'http://127.0.0.1:8001/api',
   );
 
   static const Duration timeout = Duration(seconds: 20);

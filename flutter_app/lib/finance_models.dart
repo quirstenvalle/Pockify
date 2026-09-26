@@ -7,6 +7,7 @@ class TransactionModel {
   final TxKind kind;
   final double amount;
   final String category;
+  final String? budgetId;
   final String? note;
   final String date;
   final String? method;
@@ -17,6 +18,7 @@ class TransactionModel {
     required this.kind,
     required this.amount,
     required this.category,
+    this.budgetId,
     this.note,
     required this.date,
     this.method,
@@ -27,6 +29,7 @@ class TransactionModel {
     TxKind? kind,
     double? amount,
     String? category,
+    String? budgetId,
     String? note,
     String? date,
     String? method,
@@ -37,6 +40,7 @@ class TransactionModel {
       kind: kind ?? this.kind,
       amount: amount ?? this.amount,
       category: category ?? this.category,
+      budgetId: budgetId ?? this.budgetId,
       note: note ?? this.note,
       date: date ?? this.date,
       method: method ?? this.method,
@@ -49,22 +53,31 @@ class TransactionModel {
     'kind': kind.name,
     'amount': amount,
     'category': category,
+    'budget_id': budgetId,
     'note': note,
     'date': date,
     'method': method,
     'favorite': favorite,
   };
 
-  Map<String, dynamic> toSupabase() => {
-    'id': id,
-    'kind': kind.name,
-    'amount': amount,
-    'category': category,
-    'note': note,
-    'date': date,
-    'method': method,
-    'favorite': favorite,
-  };
+  Map<String, dynamic> toSupabase() {
+    final payload = <String, dynamic>{
+      'id': id,
+      'kind': kind.name,
+      'amount': amount,
+      'category': category,
+      'note': note,
+      'date': date,
+      'method': method,
+      'favorite': favorite,
+    };
+
+    if (budgetId != null) {
+      payload['budget_id'] = budgetId;
+    }
+
+    return payload;
+  }
 
   factory TransactionModel.fromJson(Map<String, dynamic> json) =>
       TransactionModel(
@@ -75,12 +88,12 @@ class TransactionModel {
         ),
         amount: (json['amount'] as num).toDouble(),
         category: json['category'] as String,
+        budgetId: json['budget_id'] as String?,
         note: json['note'] as String?,
         date: json['date'] as String,
         method: json['method'] as String?,
         favorite: json['favorite'] as bool? ?? false,
       );
-
   factory TransactionModel.fromSupabase(Map<String, dynamic> json) =>
       TransactionModel.fromJson({
         ...json,
@@ -379,14 +392,86 @@ double spentForBudget({
   required List<TransactionModel> txs,
 }) {
   final window = budgetWindow(budget);
-  return txs.where((tx) {
-    if (tx.kind != TxKind.expense || tx.category != budget.category) {
-      return false;
+  final budgetIdentity =
+      (budget.name.trim().isEmpty ? budget.category : budget.name)
+          .trim()
+          .toLowerCase();
+  final budgetStart = DateTime.tryParse(budget.date) ?? window.start;
+  DateTime? nextBudgetStart;
+  for (final candidate in budgets) {
+    final candidateIdentity =
+        (candidate.name.trim().isEmpty ? candidate.category : candidate.name)
+            .trim()
+            .toLowerCase();
+    if (candidate.category != budget.category ||
+        candidateIdentity != budgetIdentity) {
+      continue;
     }
+    final candidateStart = DateTime.tryParse(candidate.date);
+    if (candidateStart == null || !candidateStart.isAfter(budgetStart)) {
+      continue;
+    }
+    if (nextBudgetStart == null || candidateStart.isBefore(nextBudgetStart)) {
+      nextBudgetStart = candidateStart;
+    }
+  }
+  final end = nextBudgetStart != null && nextBudgetStart.isBefore(window.end)
+      ? nextBudgetStart
+      : window.end;
+  var total = 0.0;
+  for (final tx in txs) {
+    if (tx.budgetId != null) {
+      if (tx.budgetId == budget.id) total += tx.amount;
+      continue;
+    }
+    if (tx.kind != TxKind.expense || tx.category != budget.category) continue;
     final d = DateTime.tryParse(tx.date);
-    if (d == null) return false;
-    return !d.isBefore(window.start) && d.isBefore(window.end);
-  }).fold(0.0, (total, tx) => total + tx.amount);
+    if (d != null &&
+        !d.isBefore(window.start) &&
+        !d.isBefore(budgetStart) &&
+        d.isBefore(end)) {
+      total += tx.amount;
+    }
+  }
+  return total;
+}
+
+bool hasUnconsumedBudget({
+  required String name,
+  required List<BudgetModel> budgets,
+  required List<TransactionModel> txs,
+}) {
+  final identity = name.trim().toLowerCase();
+  return budgets.any((budget) {
+    final budgetIdentity =
+        (budget.name.trim().isEmpty ? budget.category : budget.name)
+            .trim()
+            .toLowerCase();
+    if (budgetIdentity != identity) return false;
+    final spent = spentForBudget(budget: budget, budgets: budgets, txs: txs);
+    return spent < budget.limit;
+  });
+}
+
+String nextAvailableBudgetName(
+  String requestedName,
+  List<BudgetModel> budgets,
+) {
+  final requested = requestedName.trim();
+  final existing = budgets
+      .map(
+        (budget) => (budget.name.trim().isEmpty ? budget.category : budget.name)
+            .trim()
+            .toLowerCase(),
+      )
+      .toSet();
+  if (!existing.contains(requested.toLowerCase())) return requested;
+
+  var suffix = 1;
+  while (existing.contains('$requested$suffix'.toLowerCase())) {
+    suffix++;
+  }
+  return '$requested$suffix';
 }
 
 class ChartPoint {
