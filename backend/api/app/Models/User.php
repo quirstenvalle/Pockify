@@ -37,6 +37,11 @@ class User extends Authenticatable implements MustVerifyEmailContract
         return $this->hasMany(Budget::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     public function savingsGoals(): HasMany
     {
         return $this->hasMany(SavingsGoal::class);

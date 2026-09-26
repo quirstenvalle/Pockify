@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\FinanceController;
 use Illuminate\Support\Facades\Route;
 
+
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/email/verify', [AuthController::class, 'verifyEmail']);

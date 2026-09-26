@@ -134,9 +134,6 @@ function ProfilePage() {
         <SettingRow icon={Shield} label="Biometric lock" defaultOn={false} />
       </section>
 
-      <p className="text-muted-foreground mt-4 text-center text-[11px]">
-        Accounts, sync and notifications will be wired to Lovable Cloud later.
-      </p>
     </AppShell>
   );
 }

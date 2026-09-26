@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Budget;
 use App\Models\SavingsGoal;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -14,9 +15,54 @@ class FinanceController extends Controller
         $user = $request->user();
 
         return response()->json([
+            'transactions' => $user->transactions()->orderByDesc('date')->orderByDesc('id')->get(),
             'budgets' => $user->budgets()->orderByDesc('budget_date')->orderByDesc('id')->get(),
             'goals' => $user->savingsGoals()->with('contributions')->orderBy('id')->get(),
         ]);
+    }
+
+    public function storeTransaction(Request $request)
+    {
+        $data = $request->validate([
+            'kind' => ['required', 'in:income,expense'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'category' => ['required', 'string', 'max:120'],
+            'note' => ['nullable', 'string', 'max:500'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'method' => ['nullable', 'string', 'max:80'],
+            'favorite' => ['sometimes', 'boolean'],
+        ]);
+
+        $transaction = $request->user()->transactions()->create($data);
+
+        return response()->json(['transaction' => $transaction], 201);
+    }
+
+    public function updateTransaction(Request $request, Transaction $transaction)
+    {
+        abort_unless($transaction->user_id === $request->user()->id, 404);
+
+        $data = $request->validate([
+            'kind' => ['sometimes', 'in:income,expense'],
+            'amount' => ['sometimes', 'numeric', 'gt:0'],
+            'category' => ['sometimes', 'string', 'max:120'],
+            'note' => ['nullable', 'string', 'max:500'],
+            'date' => ['sometimes', 'date_format:Y-m-d'],
+            'method' => ['nullable', 'string', 'max:80'],
+            'favorite' => ['sometimes', 'boolean'],
+        ]);
+
+        $transaction->update($data);
+
+        return response()->json(['transaction' => $transaction->fresh()]);
+    }
+
+    public function destroyTransaction(Request $request, Transaction $transaction)
+    {
+        abort_unless($transaction->user_id === $request->user()->id, 404);
+        $transaction->delete();
+
+        return response()->noContent();
     }
 
     public function storeBudget(Request $request)

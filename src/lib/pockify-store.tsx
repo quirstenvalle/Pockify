@@ -19,9 +19,12 @@ import {
   addGoalContribution as persistGoalContribution,
   createBudget as persistBudget,
   createGoal as persistGoal,
+  createTransaction as persistTransaction,
+  deleteTransaction as persistTransactionDeletion,
   deleteBudget as persistBudgetDeletion,
   fetchFinance,
   hasFinanceApiSession,
+  updateTransaction as persistTransactionUpdate,
 } from "./pockify-api";
 
 type Store = {
@@ -58,7 +61,12 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem("pockify_finance");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved) as { budgets?: Budget[]; goals?: Goal[] };
+        const parsed = JSON.parse(saved) as {
+          transactions?: Transaction[];
+          budgets?: Budget[];
+          goals?: Goal[];
+        };
+        if (parsed.transactions) setTransactions(parsed.transactions);
         if (parsed.budgets) setBudgets(parsed.budgets);
         if (parsed.goals) setGoals(parsed.goals);
       } catch {
@@ -69,6 +77,7 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
     fetchFinance()
       .then((finance) => {
         if (finance) {
+          setTransactions(finance.transactions);
           setBudgets(finance.budgets);
           setGoals(finance.goals);
         }
@@ -81,9 +90,9 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (hydrated.current && !hasFinanceApiSession()) {
-      localStorage.setItem("pockify_finance", JSON.stringify({ budgets, goals }));
+      localStorage.setItem("pockify_finance", JSON.stringify({ transactions, budgets, goals }));
     }
-  }, [budgets, goals]);
+  }, [transactions, budgets, goals]);
 
   const value = useMemo<Store>(
     () => ({
@@ -94,12 +103,35 @@ export function PockifyProvider({ children }: { children: ReactNode }) {
       readAlertIds,
       markAlertRead: (id) => setReadAlertIds((prev) => (prev.includes(id) ? prev : [...prev, id])),
       markAllAlertsRead: (ids) => setReadAlertIds((prev) => [...new Set([...prev, ...ids])]),
-      addTransaction: (tx) => setTransactions((p) => [{ ...tx, id: uid() }, ...p]),
-      updateTransaction: (id, patch) =>
-        setTransactions((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t))),
-      removeTransaction: (id) => setTransactions((p) => p.filter((t) => t.id !== id)),
+      addTransaction: (tx) => {
+        const optimistic = { ...tx, id: uid() };
+        setTransactions((p) => [optimistic, ...p]);
+        persistTransaction(tx)
+          .then(
+            (saved) =>
+              saved &&
+              setTransactions((p) =>
+                p.map((item) => (item.id === optimistic.id ? saved : item)),
+              ),
+          )
+          .catch(() => undefined);
+      },
+      updateTransaction: (id, patch) => {
+        setTransactions((p) => p.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+        persistTransactionUpdate(id, patch).catch(() => undefined);
+      },
+      removeTransaction: (id) => {
+        setTransactions((p) => p.filter((t) => t.id !== id));
+        persistTransactionDeletion(id).catch(() => undefined);
+      },
       toggleFavorite: (id) =>
-        setTransactions((p) => p.map((t) => (t.id === id ? { ...t, favorite: !t.favorite } : t))),
+        setTransactions((p) => {
+          const current = p.find((t) => t.id === id);
+          if (current) {
+            persistTransactionUpdate(id, { favorite: !current.favorite }).catch(() => undefined);
+          }
+          return p.map((t) => (t.id === id ? { ...t, favorite: !t.favorite } : t));
+        }),
       addBudget: (b) => {
         const optimistic = { ...b, id: uid() };
         setBudgets((p) => [optimistic, ...p]);

@@ -12,7 +12,6 @@ const NAV = [
   { to: "/transactions", label: "Activity", icon: Receipt },
   { to: "/budgets", label: "Budgets", icon: Wallet },
   { to: "/analytics", label: "Insights", icon: PieChart },
-  { to: "/profile", label: "Profile", icon: User },
 ] as const;
 
 function NotificationPanel({
@@ -108,35 +107,47 @@ export function AppShell({
           {subtitle && <p className="text-muted-foreground truncate text-xs">{subtitle}</p>}
         </div>
       </div>
-      <Popover open={notifOpen} onOpenChange={setNotifOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="card-soft text-muted-foreground relative flex size-10 shrink-0 items-center justify-center"
-            aria-label="Notifications"
+      <div className="flex shrink-0 items-center gap-2">
+        <Popover open={notifOpen} onOpenChange={setNotifOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="card-soft text-muted-foreground relative flex size-10 shrink-0 items-center justify-center"
+              aria-label="Notifications"
+            >
+              <Bell className="size-4" />
+              {unreadCount > 0 && (
+                <span className="bg-accent text-accent-foreground absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-bold">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            side="bottom"
+            sideOffset={8}
+            className="card-raised w-80 max-w-[calc(100vw-1.5rem)] border-0 p-0 shadow-[var(--shadow-raised)]"
           >
-            <Bell className="size-4" />
-            {unreadCount > 0 && (
-              <span className="bg-accent text-accent-foreground absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-bold">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          side="bottom"
-          sideOffset={8}
-          className="card-raised w-80 max-w-[calc(100vw-1.5rem)] border-0 p-0 shadow-[var(--shadow-raised)]"
+            <NotificationPanel
+              alertList={alertList}
+              readAlertIds={readAlertIds}
+              onMarkRead={markAlertRead}
+              onMarkAllRead={() => markAllAlertsRead(alertList.map((alert) => alert.id))}
+            />
+          </PopoverContent>
+        </Popover>
+        <Link
+          to="/profile"
+          aria-label="Profile"
+          title="Profile"
+          className={`card-soft flex size-10 shrink-0 items-center justify-center ${
+            pathname === "/profile" ? "text-accent" : "text-muted-foreground"
+          }`}
         >
-          <NotificationPanel
-            alertList={alertList}
-            readAlertIds={readAlertIds}
-            onMarkRead={markAlertRead}
-            onMarkAllRead={() => markAllAlertsRead(alertList.map((alert) => alert.id))}
-          />
-        </PopoverContent>
-      </Popover>
+          <User className="size-4" />
+        </Link>
+      </div>
     </header>
   );
 
@@ -193,7 +204,7 @@ export function AppShell({
           >
             <Plus className="size-6" />
           </button>
-          {NAV.slice(2, 5).map((n) => (
+          {NAV.slice(2).map((n) => (
             <NavItem key={n.to} {...n} active={pathname === n.to} />
           ))}
         </div>

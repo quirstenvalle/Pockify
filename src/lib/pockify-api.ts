@@ -1,6 +1,16 @@
 import type { Budget, Goal, GoalContribution } from "./pockify";
 
 type FinancePayload = {
+  transactions: Array<{
+    id: number;
+    kind: "income" | "expense";
+    amount: string | number;
+    category: string;
+    note?: string | null;
+    date: string;
+    method?: string | null;
+    favorite: boolean;
+  }>;
   budgets: Array<{ id: number; category: string; limit: string | number; budget_date: string }>;
   goals: Array<{
     id: number;
@@ -42,11 +52,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
 
 export const hasFinanceApiSession = () => Boolean(token());
 
-export async function fetchFinance(): Promise<{ budgets: Budget[]; goals: Goal[] } | null> {
+export async function fetchFinance(): Promise<
+  { transactions: Transaction[]; budgets: Budget[]; goals: Goal[] } | null
+> {
   const payload = await request<FinancePayload>("/finance");
   if (!payload) return null;
 
   return {
+    transactions: payload.transactions.map(transactionFromApi),
     budgets: payload.budgets.map((budget) => ({
       id: String(budget.id),
       category: budget.category,
@@ -64,6 +77,41 @@ export async function fetchFinance(): Promise<{ budgets: Budget[]; goals: Goal[]
         date: contribution.contributed_at,
       })),
     })),
+  };
+}
+
+export async function createTransaction(input: Omit<Transaction, "id">) {
+  const payload = await request<{ transaction: FinancePayload["transactions"][number] }>(
+    "/transactions",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  if (!payload) return null;
+  return transactionFromApi(payload.transaction);
+}
+
+export async function updateTransaction(id: string, patch: Partial<Transaction>) {
+  const payload = await request<{ transaction: FinancePayload["transactions"][number] }>(
+    `/transactions/${id}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+  if (!payload) return null;
+  return transactionFromApi(payload.transaction);
+}
+
+export async function deleteTransaction(id: string) {
+  await request(`/transactions/${id}`, { method: "DELETE" });
+}
+
+function transactionFromApi(transaction: FinancePayload["transactions"][number]): Transaction {
+  return {
+    id: String(transaction.id),
+    kind: transaction.kind,
+    amount: Number(transaction.amount),
+    category: transaction.category,
+    note: transaction.note ?? undefined,
+    date: transaction.date,
+    method: transaction.method ?? undefined,
+    favorite: transaction.favorite,
   };
 }
 
